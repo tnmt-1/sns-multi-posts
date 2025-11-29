@@ -30,6 +30,45 @@
         body {
             background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
         }
+
+        .mobile-submit-container {
+            position: relative;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding-bottom: 7rem;
+            }
+
+            #postForm {
+                padding-bottom: 1rem;
+            }
+
+            .mobile-submit-container {
+                position: fixed;
+                left: 1rem;
+                right: 1rem;
+                bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+                z-index: 40;
+            }
+
+            .mobile-submit-container::before {
+                content: "";
+                position: absolute;
+                inset: -1rem -1rem auto;
+                height: 4rem;
+                background: linear-gradient(180deg, rgba(245, 247, 250, 0) 0%, rgba(245, 247, 250, 0.9) 80%);
+                z-index: -1;
+                border-radius: 1rem;
+            }
+        }
+
+        @media (min-width: 769px) {
+            .mobile-submit-container {
+                position: static;
+                transform: none !important;
+            }
+        }
     </style>
 </head>
 
@@ -66,46 +105,66 @@
                     </h2>
 
                     <form action="/post" method="post" enctype="multipart/form-data" id="postForm">
-                        <!-- Account Selection -->
-                        <div class="mb-4">
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Post to:</label>
-                            <div class="flex flex-wrap gap-2">
-                                {% for provider, accs in accounts.items() %}
-                                {% for acc in accs %}
-                                <label
-                                    class="inline-flex items-center bg-white border border-gray-200 rounded-full px-3 py-1 cursor-pointer hover:bg-gray-50 transition select-none">
-                                    <input type="checkbox" name="selected_accounts" value="{{ provider }}:{{ acc.id }}"
-                                        class="form-checkbox h-4 w-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500"
-                                        checked onchange="updateCharLimit()">
-                                    <span class="ml-2 text-sm text-gray-700">
-                                        {% if provider == 'twitter' %}<i
-                                            class="fab fa-twitter text-blue-400 mr-1"></i>{% endif %}
-                                        {% if provider == 'bluesky' %}<i
-                                            class="fa-brands fa-bluesky text-blue-600 mr-1"></i>{%
-                                        endif %}
-                                        {% if provider == 'misskey' %}<i
-                                            class="fas fa-rocket text-green-500 mr-1"></i>{% endif %}
-                                        {{ acc.username }}
-                                    </span>
-                                </label>
-                                {% endfor %}
-                                {% endfor %}
-                            </div>
-                            <p id="accountError" class="text-red-500 text-xs mt-1 hidden">Please select at least one
-                                account.</p>
-                        </div>
+                        <!-- Advanced Settings: Post to / Misskey Visibility -->
+                        <details id="advancedSettings"
+                            class="mb-4 rounded-lg bg-white/60 border border-gray-200 overflow-hidden">
+                            <summary
+                                class="list-none cursor-pointer px-3 py-2 flex items-center justify-between text-sm font-medium text-gray-700 select-none">
+                                <span class="flex items-center">
+                                    <i class="fas fa-sliders-h mr-2 text-purple-500"></i>
+                                    投稿先・Misskey設定
+                                </span>
+                                <span class="text-xs text-gray-500 flex items-center">
+                                    タップして表示
+                                    <i class="fas fa-chevron-down ml-1 text-gray-400"></i>
+                                </span>
+                            </summary>
+                            <div class="px-3 pb-3 pt-2 space-y-4">
+                                <!-- Account Selection -->
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">Post to:</label>
+                                    <div class="flex flex-wrap gap-2">
+                                        {% for provider, accs in accounts.items() %}
+                                        {% for acc in accs %}
+                                        <label
+                                            class="inline-flex items-center bg-white border border-gray-200 rounded-full px-3 py-1 cursor-pointer hover:bg-gray-50 transition select-none">
+                                            <input type="checkbox" name="selected_accounts"
+                                                value="{{ provider }}:{{ acc.id }}"
+                                                class="form-checkbox h-4 w-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500"
+                                                checked onchange="updateCharLimit()">
+                                            <span class="ml-2 text-sm text-gray-700">
+                                                {% if provider == 'twitter' %}<i
+                                                    class="fab fa-twitter text-blue-400 mr-1"></i>{% endif %}
+                                                {% if provider == 'bluesky' %}<i
+                                                    class="fa-brands fa-bluesky text-blue-600 mr-1"></i>{%
+                                                endif %}
+                                                {% if provider == 'misskey' %}<i
+                                                    class="fas fa-rocket text-green-500 mr-1"></i>{% endif %}
+                                                {{ acc.username }}
+                                            </span>
+                                        </label>
+                                        {% endfor %}
+                                        {% endfor %}
+                                    </div>
+                                    <p id="accountError" class="text-red-500 text-xs mt-1 hidden">Please select at least
+                                        one
+                                        account.</p>
+                                </div>
 
-                        <!-- Misskey Visibility -->
-                        <div class="mb-4" id="misskeyVisibilitySection">
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Misskey Visibility</label>
-                            <select name="misskey_visibility"
-                                class="w-full p-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white/80">
-                                <option value="public">Public</option>
-                                <option value="home">Home</option>
-                                <option value="followers">Followers</option>
-                                <option value="specified">Direct (Specified)</option>
-                            </select>
-                        </div>
+                                <!-- Misskey Visibility -->
+                                <div id="misskeyVisibilitySection">
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">Misskey
+                                        Visibility</label>
+                                    <select name="misskey_visibility"
+                                        class="w-full p-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white/80">
+                                        <option value="public">Public</option>
+                                        <option value="home">Home</option>
+                                        <option value="followers">Followers</option>
+                                        <option value="specified">Direct (Specified)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </details>
 
                         <!-- Text Area -->
                         <div class="mb-4 relative">
@@ -140,10 +199,12 @@
                         </div>
 
                         <!-- Submit Button -->
-                        <button type="submit" id="submitBtn"
-                            class="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-3 px-4 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition duration-200 flex items-center justify-center">
-                            <i class="fas fa-paper-plane mr-2"></i> Post Now
-                        </button>
+                        <div id="mobileSubmitContainer" class="mobile-submit-container">
+                            <button type="submit" id="submitBtn"
+                                class="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-3 px-4 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition duration-200 flex items-center justify-center">
+                                <i class="fas fa-paper-plane mr-2"></i> Post Now
+                            </button>
+                        </div>
                     </form>
                 </div>
             </div>
@@ -393,6 +454,29 @@
                     document.getElementById('postForm').submit();
                 }
             });
+
+            // 初期フォーカスとモバイルキーボード対応
+            const textArea = document.getElementById('postText');
+            if (textArea) {
+                setTimeout(() => {
+                    textArea.focus({ preventScroll: true });
+                }, 200);
+            }
+
+            // Advanced settings（Post to / Misskey）をデスクトップではデフォルト展開
+            const advanced = document.getElementById('advancedSettings');
+            if (advanced && window.matchMedia) {
+                const mq = window.matchMedia('(min-width: 768px)');
+                if (mq.matches) {
+                    advanced.open = true;
+                }
+                mq.addEventListener('change', (e) => {
+                    if (e.matches) {
+                        advanced.open = true;
+                    }
+                });
+            }
+
         });
         // ===== ローカル保存関連ここまで =====
     </script>
