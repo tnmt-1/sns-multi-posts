@@ -93,8 +93,12 @@ async def login_misskey(request: Request, instance: str = Form(...)) -> Response
     # Store pending auth
     request.session["misskey_pending"] = {"session_id": session_id, "instance": instance}
 
+    # 画像アップロードでドライブにファイルを書き込む必要があるため、
+    # MiAuth で drive の書き込み権限も要求する
+    # Misskey の MiAuth では permission をカンマ区切りで指定できる
+    permissions = "write:notes,write:drive"
     auth_url = (
-        f"https://{instance}/miauth/{session_id}?name=SNSMultiPost&callback={callback_url}&permission=write:notes"
+        f"https://{instance}/miauth/{session_id}?name=SNSMultiPost&callback={callback_url}&permission={permissions}"
     )
     return RedirectResponse(url=auth_url, status_code=303)
 
