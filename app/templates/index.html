@@ -295,17 +295,6 @@
             });
         }
 
-        // Initial call
-        updateCharLimit();
-
-        // Ctrl+Enter to submit
-        document.getElementById('postText').addEventListener('keydown', function (e) {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                e.preventDefault();
-                document.getElementById('postForm').submit();
-            }
-        });
-
         // Toggle accounts section on mobile
         function toggleAccounts() {
             const section = document.getElementById('accountsSection');
@@ -313,6 +302,99 @@
             section.classList.toggle('hidden');
             chevron.classList.toggle('rotate-180');
         }
+
+        // ===== ここからローカル保存関連 =====
+        const STORAGE_KEYS = {
+            selectedAccounts: 'sns-multi-post:selected-accounts',
+            misskeyVisibility: 'sns-multi-post:misskey-visibility'
+        };
+
+        function saveSelectedAccountsToStorage() {
+            try {
+                const checked = Array.from(
+                    document.querySelectorAll('input[name="selected_accounts"]:checked')
+                ).map(cb => cb.value);
+                localStorage.setItem(STORAGE_KEYS.selectedAccounts, JSON.stringify(checked));
+            } catch (e) {
+                console.warn('Failed to save selected accounts', e);
+            }
+        }
+
+        function restoreSelectedAccountsFromStorage() {
+            try {
+                const stored = localStorage.getItem(STORAGE_KEYS.selectedAccounts);
+                if (!stored) return;
+
+                const values = new Set(JSON.parse(stored));
+                const allCbs = document.querySelectorAll('input[name="selected_accounts"]');
+
+                allCbs.forEach(cb => {
+                    cb.checked = values.has(cb.value);
+                });
+            } catch (e) {
+                console.warn('Failed to restore selected accounts', e);
+            }
+        }
+
+        function saveMisskeyVisibilityToStorage() {
+            try {
+                const select = document.querySelector('select[name="misskey_visibility"]');
+                if (!select) return;
+                localStorage.setItem(STORAGE_KEYS.misskeyVisibility, select.value);
+            } catch (e) {
+                console.warn('Failed to save misskey visibility', e);
+            }
+        }
+
+        function restoreMisskeyVisibilityFromStorage() {
+            try {
+                const select = document.querySelector('select[name="misskey_visibility"]');
+                if (!select) return;
+
+                const stored = localStorage.getItem(STORAGE_KEYS.misskeyVisibility);
+                if (!stored) return;
+
+                // オプションに存在する値だけをセット
+                const hasOption = Array.from(select.options).some(opt => opt.value === stored);
+                if (hasOption) {
+                    select.value = stored;
+                }
+            } catch (e) {
+                console.warn('Failed to restore misskey visibility', e);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // チェックボックスと公開範囲を復元
+            restoreSelectedAccountsFromStorage();
+            restoreMisskeyVisibilityFromStorage();
+
+            // 復元後に文字数上限を更新
+            updateCharLimit();
+
+            // チェックボックス変更時に保存＋上限更新
+            document.querySelectorAll('input[name="selected_accounts"]').forEach(cb => {
+                cb.addEventListener('change', () => {
+                    saveSelectedAccountsToStorage();
+                    updateCharLimit();
+                });
+            });
+
+            // Misskey 公開範囲変更時に保存
+            const misskeySelect = document.querySelector('select[name="misskey_visibility"]');
+            if (misskeySelect) {
+                misskeySelect.addEventListener('change', saveMisskeyVisibilityToStorage);
+            }
+
+            // Ctrl+Enter で送信
+            document.getElementById('postText').addEventListener('keydown', function (e) {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    document.getElementById('postForm').submit();
+                }
+            });
+        });
+        // ===== ローカル保存関連ここまで =====
     </script>
 
     <!-- Service Worker Registration -->
