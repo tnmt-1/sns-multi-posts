@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connect Misskey</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-100 min-h-screen flex items-center justify-center">
+    <div class="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
+        <h1 class="text-2xl font-bold mb-6 text-green-600">Connect Misskey</h1>
+
+        <form action="/auth/login/misskey" method="post" class="space-y-4">
+            <div>
+                <label class="block text-gray-700 text-sm font-bold mb-2" for="instance">
+                    Instance URL (e.g. misskey.io)
+                </label>
+                <input
+                    class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                    id="instance" name="instance" type="text" placeholder="misskey.io" required>
+            </div>
+            <div class="flex items-center justify-between">
+                <button
+                    class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full"
+                    type="submit">
+                    Connect via MiAuth
+                </button>
+            </div>
+        </form>
+        <div class="mt-4 text-center">
+            <a href="/" class="text-blue-500 hover:text-blue-800 text-sm">Back to Home</a>
+        </div>
+    </div>
+</body>
+
+</html>
