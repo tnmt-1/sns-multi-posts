@@ -3,7 +3,9 @@ from typing import Any
 from atproto import Client, models
 
 
-async def post_to_bluesky(account: dict[str, Any], text: str, images: list[bytes] | None = None) -> bool:
+async def post_to_bluesky(
+    account: dict[str, Any], text: str, images: list[bytes] | None = None
+) -> dict[str, Any]:
     if images is None:
         images = []
     client = Client()
@@ -21,4 +23,6 @@ async def post_to_bluesky(account: dict[str, Any], text: str, images: list[bytes
         embed = models.AppBskyEmbedImages.Main(images=blob_refs)
 
     client.send_post(text=text, embed=embed)
-    return True
+
+    # 他のサービス（Twitter, Misskey）と同様に辞書型で結果を返す
+    return {"success": True}

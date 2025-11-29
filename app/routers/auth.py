@@ -1,5 +1,6 @@
 import os
 import uuid
+from typing import cast
 
 import httpx
 from atproto import Client
@@ -36,7 +37,9 @@ oauth.register(
 async def login(request: Request, provider: str) -> Response:
     redirect_uri = request.url_for("auth_callback", provider=provider)
     if provider == "twitter":
-        return await oauth.twitter.authorize_redirect(request, redirect_uri)
+        # authorize_redirect は実際には Starlette Response を返すが、
+        # ライブラリ側の型が Any になっているため Response として明示する
+        return cast(Response, await oauth.twitter.authorize_redirect(request, redirect_uri))
     elif provider == "bluesky":
         return templates.TemplateResponse("auth/bluesky_login.html", {"request": request})
     elif provider == "misskey":

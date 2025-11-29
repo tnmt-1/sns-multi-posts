@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 import httpx
 
 
@@ -6,7 +8,7 @@ async def post_to_misskey(
     text: str,
     images: list[bytes] | None = None,
     visibility: str = "public",
-) -> dict[str, str]:
+) -> dict[str, Any]:
     if images is None:
         images = []
     instance = account["instance"]
@@ -28,7 +30,7 @@ async def post_to_misskey(
                 file_ids.append(resp.json()["id"])
 
     url = f"https://{instance}/api/notes/create"
-    payload = {
+    payload: dict[str, Any] = {
         "i": token,
         "text": text,
         "visibility": visibility,
@@ -39,4 +41,5 @@ async def post_to_misskey(
     async with httpx.AsyncClient() as client:
         resp = await client.post(url, json=payload)
         resp.raise_for_status()
-        return resp.json()
+        # Misskey API のレスポンスはさまざまなフィールドを含むため、dict[str, Any] として扱う
+        return cast(dict[str, Any], resp.json())
