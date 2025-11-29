@@ -95,9 +95,22 @@ async def create_post(
             logger.info(f"Successfully posted to {provider}")
             return {"provider": provider, "status": "success"}
         except Exception as e:
-            error_msg = f"Failed to post to {provider}: {type(e).__name__}: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            return {"provider": provider, "status": "error", "message": str(e)}
+            error_type = type(e).__name__
+            error_msg = str(e)
+
+            # Provide more user-friendly error messages
+            if "429" in error_msg or "TooManyRequests" in error_type or "rate limit" in error_msg.lower():
+                user_message = "Rate limit exceeded. Please try again later."
+            elif "401" in error_msg or "Unauthorized" in error_type:
+                user_message = "Authentication failed. Please reconnect your account."
+            elif "403" in error_msg or "Forbidden" in error_type:
+                user_message = "Access denied. Please check your permissions."
+            else:
+                user_message = f"{error_type}: {error_msg}"
+
+            full_error_msg = f"Failed to post to {provider}: {error_type}: {error_msg}"
+            logger.error(full_error_msg, exc_info=True)
+            return {"provider": provider, "status": "error", "message": user_message}
 
     # Re-map tasks to include provider name for result tracking
     safe_tasks = []
