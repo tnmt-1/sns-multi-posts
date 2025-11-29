@@ -111,37 +111,24 @@ async def auth_callback(request: Request, provider: str, session: str | None = N
     if provider == "twitter":
         token = await oauth.twitter.authorize_access_token(request)
 
-        # Debug logging
-        logger.info(f"Twitter Token Keys: {list(token.keys())}")
-        logger.info(f"Has oauth_token: {'oauth_token' in token}")
-        logger.info(f"Has oauth_token_secret: {'oauth_token_secret' in token}")
-
-        # OAuth 1.0a returns oauth_token and oauth_token_secret in the token dict
-        # We can use these to get user info via v1.1 or v2
-
-        # Use v1.1 verify_credentials to get user info
+        # Get user info via v1.1 verify_credentials
         resp = await oauth.twitter.get("account/verify_credentials.json", token=token)
-        logger.info(f"verify_credentials status: {resp.status_code}")
         if resp.status_code != 200:
-            logger.error(f"verify_credentials failed: {resp.text}")
+            logger.error(f"Twitter verify_credentials failed: {resp.status_code} - {resp.text}")
+            raise HTTPException(status_code=400, detail="Twitter authentication failed")
 
         user_data = resp.json()
 
-        # Store token in session
-        # We might want to store a list of accounts if we support multiple
-        # For now, let's just store the latest one or append to a list in session
-
+        # Store account in session
         accounts = request.session.get("accounts", {})
         if "twitter" not in accounts:
             accounts["twitter"] = []
 
-        # Basic user info extraction
-        # v1.1 returns fields directly
         account_info = {
             "id": user_data.get("id_str"),
             "username": user_data.get("screen_name"),
             "name": user_data.get("name"),
-            "token": token,  # Contains oauth_token and oauth_token_secret
+            "token": token,
         }
 
         # Avoid duplicates

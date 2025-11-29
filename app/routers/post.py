@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import time
 from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
@@ -81,27 +80,6 @@ async def create_post(
 
     for provider, acc in targets:
         if provider == "twitter":
-            # アクセストークンの有効期限をチェックし、必要ならリフレッシュ
-            token = acc.get("token")
-            if isinstance(token, dict):
-                expires_at = token.get("expires_at")
-                # 有効期限が近い（60秒以内）場合は先にリフレッシュしておく
-                if expires_at and expires_at <= time.time() + 60:
-                    try:
-                        new_token = await twitter.refresh_twitter_token(token)
-                        acc["token"] = new_token
-
-                        # セッションの accounts にも反映しておく（トークンローテーション対策）
-                        twitter_accounts = accounts_session.get("twitter", [])
-                        for sess_acc in twitter_accounts:
-                            if str(sess_acc.get("id")) == str(acc.get("id")):
-                                sess_acc["token"] = new_token
-                                break
-                        request.session["accounts"] = accounts_session
-                        logger.info("Twitter token refreshed successfully")
-                    except Exception as e:
-                        logger.error(f"Failed to refresh Twitter token: {e}", exc_info=True)
-
             tasks.append(twitter.post_to_twitter(acc.get("token"), text, images_data))
         elif provider == "bluesky":
             tasks.append(bluesky.post_to_bluesky(acc, text, image_bytes))
