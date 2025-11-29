@@ -114,7 +114,7 @@ async def post_to_twitter(token: dict[str, Any] | str, text: str, images: list[b
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(url, json=payload, headers=headers)
-        if resp.status_code != 200:
+        if not (200 <= resp.status_code < 300):
             # Log the error response for debugging
             logger.error(f"Twitter API Error: {resp.status_code} - {resp.text}")
         resp.raise_for_status()
