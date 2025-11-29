@@ -49,7 +49,7 @@ async def login(request: Request, provider: str) -> Response:
 async def login_bluesky(request: Request, handle: str = Form(...), password: str = Form(...)) -> Response:
     try:
         client = Client()
-        profile = client.login(handle, password)  # type: ignore[assignment]
+        profile = client.login(handle, password)
 
         # Store session
         accounts = request.session.get("accounts", {})

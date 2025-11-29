@@ -75,7 +75,6 @@ async def create_post(
         )
 
     # Dispatch posts
-    # Dispatch posts
     tasks = []
 
     for provider, acc in targets:

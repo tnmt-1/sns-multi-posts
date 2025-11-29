@@ -1,14 +1,68 @@
+import logging
+import os
+import time
+from typing import Any, cast
 
 import httpx
 
+logger = logging.getLogger(__name__)
 
-async def post_to_twitter(token: dict, text: str, images: list[bytes] | None = None):
+TWITTER_TOKEN_URL = "https://api.twitter.com/2/oauth2/token"
+
+
+async def refresh_twitter_token(token: dict[str, Any]) -> dict[str, Any]:
+    """
+    Twitter のアクセストークンをリフレッシュトークンで更新する。
+
+    Authlib が取得した token dict を前提にしており、
+    少なくとも refresh_token は含まれている必要がある。
+    """
+    refresh_token = token.get("refresh_token")
+    if not refresh_token:
+        raise ValueError("Twitter token に refresh_token が含まれていません")
+
+    client_id = os.getenv("TWITTER_CLIENT_ID")
+    client_secret = os.getenv("TWITTER_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        raise RuntimeError("TWITTER_CLIENT_ID / TWITTER_CLIENT_SECRET が設定されていません")
+
+    # OAuth2 の Refresh Token フロー
+    data = {
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+    }
+
+    auth = httpx.BasicAuth(client_id, client_secret)
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(TWITTER_TOKEN_URL, data=data, auth=auth)
+        # 失敗時の詳細をログに出しておく
+        logger.info(f"Twitter refresh token response: {resp.status_code} - {resp.text}")
+        resp.raise_for_status()
+        new_token = cast(dict[str, Any], resp.json())
+
+    # expires_in から expires_at を計算しておく（Authlib 互換）
+    if "expires_in" in new_token:
+        try:
+            new_token["expires_at"] = int(time.time()) + int(new_token["expires_in"])
+        except Exception:
+            # 計算に失敗しても致命的ではないので握りつぶす
+            pass
+
+    # refresh_token が返ってこない場合は古い値を引き継ぐ
+    if "refresh_token" not in new_token and "refresh_token" in token:
+        new_token["refresh_token"] = token["refresh_token"]
+
+    return new_token
+
+
+async def post_to_twitter(token: dict[str, Any] | str, text: str, images: list[bytes] | None = None) -> dict[str, Any]:
     if images is None:
         images = []
     # Twitter API v2
     # Uploading media requires v1.1 API
 
-    media_ids = []
+    media_ids: list[str] = []
     if images:
         # We need to sign the request for v1.1
         # This is complex with just a bearer token if it's user context
@@ -26,8 +80,6 @@ async def post_to_twitter(token: dict, text: str, images: list[bytes] | None = N
                 # For small images, we can just do simple upload
                 # For small images, we can just do simple upload
                 # files = {'media': image}
-                access_token = token.get('access_token') if isinstance(token, dict) else token
-                headers = {'Authorization': f"Bearer {access_token}"}
 
                 # Wait, Twitter OAuth 2.0 User Context tokens can be used for v2,
                 # but media upload is v1.1.
@@ -52,14 +104,11 @@ async def post_to_twitter(token: dict, text: str, images: list[bytes] | None = N
     url = "https://api.twitter.com/2/tweets"
 
     # Token can be either a dict with 'access_token' key or the token string itself
-    access_token = token.get('access_token') if isinstance(token, dict) else token
+    access_token = token.get("access_token") if isinstance(token, dict) else token
 
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json"
-    }
+    headers: dict[str, Any] = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
 
-    payload = {"text": text}
+    payload: dict[str, Any] = {"text": text}
     if media_ids:
         payload["media"] = {"media_ids": media_ids}
 
@@ -67,6 +116,6 @@ async def post_to_twitter(token: dict, text: str, images: list[bytes] | None = N
         resp = await client.post(url, json=payload, headers=headers)
         if resp.status_code != 200:
             # Log the error response for debugging
-            print(f"Twitter API Error: {resp.status_code} - {resp.text}")
+            logger.error(f"Twitter API Error: {resp.status_code} - {resp.text}")
         resp.raise_for_status()
-        return resp.json()
+        return cast(dict[str, Any], resp.json())
