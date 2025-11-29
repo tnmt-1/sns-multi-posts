@@ -3,9 +3,7 @@ from typing import Any
 from atproto import Client, models
 
 
-async def post_to_bluesky(
-    account: dict[str, Any], text: str, images: list[bytes] | None = None
-) -> dict[str, Any]:
+async def post_to_bluesky(account: dict[str, Any], text: str, images: list[bytes] | None = None) -> dict[str, Any]:
     if images is None:
         images = []
     client = Client()
