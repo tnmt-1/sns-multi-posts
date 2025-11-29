@@ -10,4 +10,4 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.main import app
+from app.main import app  # noqa: F401
