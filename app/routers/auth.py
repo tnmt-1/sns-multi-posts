@@ -1,3 +1,4 @@
+import logging
 import os
 import uuid
 from typing import cast
@@ -9,27 +10,27 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.templating import Jinja2Templates
 from starlette.responses import RedirectResponse, Response
 
+# Configure logger
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/auth", tags=["auth"])
 templates = Jinja2Templates(directory="app/templates")
 
 oauth = OAuth()
 
-# Twitter (X) Configuration
+# Twitter (X) Configuration - Switched to OAuth 1.0a for Media Upload support
 oauth.register(
     name="twitter",
     client_id=os.getenv("TWITTER_CLIENT_ID"),
     client_secret=os.getenv("TWITTER_CLIENT_SECRET"),
-    access_token_url="https://api.twitter.com/2/oauth2/token",
+    request_token_url="https://api.twitter.com/oauth/request_token",
+    request_token_params=None,
+    access_token_url="https://api.twitter.com/oauth/access_token",
     access_token_params=None,
-    authorize_url="https://twitter.com/i/oauth2/authorize",
+    authorize_url="https://api.twitter.com/oauth/authenticate",
     authorize_params=None,
-    api_base_url="https://api.twitter.com/2/",
-    client_kwargs={
-        "scope": "tweet.read tweet.write users.read offline.access",
-        "token_endpoint_auth_method": "client_secret_basic",
-        "token_placement": "header",
-        "code_challenge_method": "S256",  # Enable PKCE - Authlib handles code_verifier/code_challenge automatically
-    },
+    api_base_url="https://api.twitter.com/1.1/",
+    client_kwargs=None,
 )
 
 
@@ -109,8 +110,22 @@ async def auth_callback(request: Request, provider: str, session: str | None = N
 
     if provider == "twitter":
         token = await oauth.twitter.authorize_access_token(request)
-        user_info = await oauth.twitter.get("users/me", token=token)
-        user_data = user_info.json()
+
+        # Debug logging
+        logger.info(f"Twitter Token Keys: {list(token.keys())}")
+        logger.info(f"Has oauth_token: {'oauth_token' in token}")
+        logger.info(f"Has oauth_token_secret: {'oauth_token_secret' in token}")
+
+        # OAuth 1.0a returns oauth_token and oauth_token_secret in the token dict
+        # We can use these to get user info via v1.1 or v2
+
+        # Use v1.1 verify_credentials to get user info
+        resp = await oauth.twitter.get("account/verify_credentials.json", token=token)
+        logger.info(f"verify_credentials status: {resp.status_code}")
+        if resp.status_code != 200:
+            logger.error(f"verify_credentials failed: {resp.text}")
+
+        user_data = resp.json()
 
         # Store token in session
         # We might want to store a list of accounts if we support multiple
@@ -121,13 +136,12 @@ async def auth_callback(request: Request, provider: str, session: str | None = N
             accounts["twitter"] = []
 
         # Basic user info extraction
-        # Twitter API v2 returns data in 'data' field
-        data = user_data.get("data", {})
+        # v1.1 returns fields directly
         account_info = {
-            "id": data.get("id"),
-            "username": data.get("username"),
-            "name": data.get("name"),
-            "token": token,
+            "id": user_data.get("id_str"),
+            "username": user_data.get("screen_name"),
+            "name": user_data.get("name"),
+            "token": token,  # Contains oauth_token and oauth_token_secret
         }
 
         # Avoid duplicates

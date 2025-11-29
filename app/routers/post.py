@@ -31,14 +31,16 @@ async def create_post(
     accounts_session = request.session.get("accounts", {})
 
     # Process images
+    images_data = []
     image_bytes = []
     if images:
         for img in images:
-            if img.filename:  # Check if file was actually uploaded
+            if img.filename:
                 content = await img.read()
+                images_data.append((content, img.content_type or "image/jpeg"))
                 image_bytes.append(content)
 
-    if len(image_bytes) > 4:
+    if len(images_data) > 4:
         return templates.TemplateResponse(
             "index.html", {"request": request, "error": "Max 4 images allowed", "accounts": accounts_session}
         )
@@ -100,7 +102,7 @@ async def create_post(
                     except Exception as e:
                         logger.error(f"Failed to refresh Twitter token: {e}", exc_info=True)
 
-            tasks.append(twitter.post_to_twitter(acc.get("token"), text, image_bytes))
+            tasks.append(twitter.post_to_twitter(acc.get("token"), text, images_data))
         elif provider == "bluesky":
             tasks.append(bluesky.post_to_bluesky(acc, text, image_bytes))
         elif provider == "misskey":
