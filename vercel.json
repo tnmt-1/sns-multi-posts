@@ -4,5 +4,8 @@
             "source": "/(.*)",
             "destination": "/api/index"
         }
+    ],
+    "regions": [
+        "hnd1"
     ]
 }
