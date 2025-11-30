@@ -479,7 +479,8 @@
             document.getElementById('postText').addEventListener('keydown', function (e) {
                 if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
                     e.preventDefault();
-                    document.getElementById('postForm').submit();
+                    // submitボタンをクリックすることでsubmitイベントを発火させる
+                    document.getElementById('submitBtn').click();
                 }
             });
 
