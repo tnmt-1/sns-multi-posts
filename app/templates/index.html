@@ -35,6 +35,32 @@
             position: relative;
         }
 
+        /* Spinner animation */
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+
+        .btn-loading {
+            position: relative;
+            pointer-events: none;
+        }
+
         @media (max-width: 768px) {
             body {
                 padding-bottom: 7rem;
@@ -202,7 +228,9 @@
                         <div id="mobileSubmitContainer" class="mobile-submit-container">
                             <button type="submit" id="submitBtn"
                                 class="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-3 px-4 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition duration-200 flex items-center justify-center">
-                                <i class="fas fa-paper-plane mr-2"></i> Post Now
+                                <span class="spinner hidden mr-2"></span>
+                                <i class="fas fa-paper-plane mr-2" id="submitIcon"></i>
+                                <span id="submitText">Post Now</span>
                             </button>
                         </div>
                     </form>
@@ -476,6 +504,30 @@
                     }
                 });
             }
+
+            // フォーム送信時のローディング状態を管理
+            const form = document.getElementById('postForm');
+            const submitBtn = document.getElementById('submitBtn');
+            const submitText = document.getElementById('submitText');
+            const submitIcon = document.getElementById('submitIcon');
+            const spinner = submitBtn.querySelector('.spinner');
+
+            form.addEventListener('submit', function (e) {
+                // 少なくとも1つのアカウントが選択されているか確認
+                const checkedAccounts = document.querySelectorAll('input[name=\"selected_accounts\"]:checked');
+                if (checkedAccounts.length === 0) {
+                    e.preventDefault();
+                    alert('少なくとも1つのアカウントを選択してください');
+                    return;
+                }
+
+                // ローディング状態を表示
+                submitBtn.disabled = true;
+                submitBtn.classList.add('btn-loading', 'opacity-75');
+                submitText.textContent = 'Posting...';
+                submitIcon.classList.add('hidden');
+                spinner.classList.remove('hidden');
+            });
 
         });
         // ===== ローカル保存関連ここまで =====
