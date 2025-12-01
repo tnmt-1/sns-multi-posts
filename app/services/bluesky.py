@@ -45,7 +45,7 @@ async def post_to_bluesky(account: dict[str, Any], text: str, images: list[bytes
         if blob_refs:
             embed = models.AppBskyEmbedImages.Main(images=blob_refs)
 
-        client.send_post(text=text, embed=embed)
+        client.send_post(text=text, embed=embed, langs=["ja"])
         logger.info("Successfully posted to Bluesky")
 
         # 他のサービス（Twitter, Misskey）と同様に辞書型で結果を返す
