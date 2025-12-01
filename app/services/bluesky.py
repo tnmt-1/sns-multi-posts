@@ -92,23 +92,68 @@ def _parse_urls(text: str) -> tuple[client_utils.TextBuilder, list[str]]:
 
 async def _get_url_metadata(url: str) -> dict[str, str] | None:
     """
-    Fetch URL metadata using dub.co API.
+    Fetch URL metadata by scraping the HTML page.
 
     Returns:
         Dict with title, description, and image URL, or None if failed
     """
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"https://api.dub.co/metatags?url={url}", timeout=10.0)
+        from bs4 import BeautifulSoup
+
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(
+                url,
+                timeout=10.0,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; Blueskyclient/1.0; +https://bsky.app)"},
+            )
             response.raise_for_status()
-            metadata = response.json()
+
+            soup = BeautifulSoup(response.text, "html.parser")
+
+            # Try to get Open Graph tags first, then fall back to regular meta tags
+            title = None
+            description = None
+            image = None
+
+            # Get title
+            og_title = soup.find("meta", property="og:title")
+            if og_title and og_title.get("content"):
+                title = og_title.get("content")
+            else:
+                title_tag = soup.find("title")
+                if title_tag:
+                    title = title_tag.string
+
+            # Get description
+            og_description = soup.find("meta", property="og:description")
+            if og_description and og_description.get("content"):
+                description = og_description.get("content")
+            else:
+                desc_tag = soup.find("meta", attrs={"name": "description"})
+                if desc_tag and desc_tag.get("content"):
+                    description = desc_tag.get("content")
+
+            # Get image
+            og_image = soup.find("meta", property="og:image")
+            if og_image and og_image.get("content"):
+                image = og_image.get("content")
+
+            # Make sure image URL is absolute
+            if image and not image.startswith("http"):
+                from urllib.parse import urljoin
+
+                image = urljoin(url, image)
+
+            desc_preview = description[:50] if description else None
+            logger.info(f"Scraped metadata - Title: {title}, Description: {desc_preview}..., Image: {image}")
+
             return {
-                "title": metadata.get("title", ""),
-                "description": metadata.get("description", ""),
-                "image": metadata.get("image", ""),
+                "title": title or "",
+                "description": description or "",
+                "image": image or "",
             }
     except Exception as e:
-        logger.warning(f"Failed to fetch metadata for {url}: {e}")
+        logger.warning(f"Failed to fetch metadata for {url}: {e}", exc_info=True)
         return None
 
 
@@ -124,8 +169,12 @@ async def _create_embed_card(url: str, client: Client) -> models.AppBskyEmbedExt
         External embed model or None if failed
     """
     try:
+        logger.info(f"Starting embed card creation for: {url}")
+
         # Get URL metadata
         metadata = await _get_url_metadata(url)
+        logger.info(f"Metadata retrieved: {metadata}")
+
         if not metadata or not metadata["title"]:
             logger.warning(f"No metadata found for {url}")
             return None
@@ -134,20 +183,25 @@ async def _create_embed_card(url: str, client: Client) -> models.AppBskyEmbedExt
         thumb = None
         if metadata["image"]:
             try:
-                async with httpx.AsyncClient() as http_client:
+                logger.info(f"Downloading thumbnail from: {metadata['image']}")
+                async with httpx.AsyncClient(follow_redirects=True) as http_client:
                     img_response = await http_client.get(metadata["image"], timeout=10.0)
                     img_response.raise_for_status()
                     img_bytes = img_response.content
+                    logger.info(f"Downloaded {len(img_bytes)} bytes")
 
                     # Compress image if needed
                     compressed_img = _compress_image(img_bytes)
+                    logger.info(f"Compressed to {len(compressed_img)} bytes")
 
                     # Upload to Bluesky
                     upload = client.upload_blob(compressed_img)
                     thumb = upload.blob
-                    logger.info(f"Uploaded thumbnail for {url}")
+                    logger.info(f"Successfully uploaded thumbnail for {url}")
             except Exception as e:
-                logger.warning(f"Failed to upload thumbnail for {url}: {e}")
+                logger.warning(f"Failed to upload thumbnail for {url}: {e}", exc_info=True)
+        else:
+            logger.info("No thumbnail image in metadata")
 
         # Create external embed
         external = models.AppBskyEmbedExternal.External(
@@ -157,10 +211,13 @@ async def _create_embed_card(url: str, client: Client) -> models.AppBskyEmbedExt
             thumb=thumb,
         )
 
-        return models.AppBskyEmbedExternal.Main(external=external)
+        embed_card = models.AppBskyEmbedExternal.Main(external=external)
+        logger.info(f"Created embed card: {embed_card}")
+
+        return embed_card
 
     except Exception as e:
-        logger.error(f"Failed to create embed card for {url}: {e}")
+        logger.error(f"Failed to create embed card for {url}: {e}", exc_info=True)
         return None
 
 
@@ -212,12 +269,20 @@ async def post_to_bluesky(account: dict[str, Any], text: str, images: list[bytes
         embed = None
         if blob_refs:
             # Images take priority
+            logger.info("Creating image embed (images provided)")
             embed = models.AppBskyEmbedImages.Main(images=blob_refs)
         elif urls:
             # If no images, create embed card for the first URL
-            logger.info(f"Creating embed card for first URL: {urls[0]}")
+            logger.info(f"No images provided. Creating embed card for first URL: {urls[0]}")
             embed = await _create_embed_card(urls[0], client)
+            if embed:
+                logger.info("Embed card created successfully")
+            else:
+                logger.warning("Embed card creation returned None")
+        else:
+            logger.info("No images or URLs found, no embed will be added")
 
+        logger.info(f"Final embed value: {embed}")
         client.send_post(text=text, embed=embed, facets=facets, langs=["ja"])
         logger.info("Successfully posted to Bluesky")
 
