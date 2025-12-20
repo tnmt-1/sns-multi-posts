@@ -275,7 +275,10 @@
                                         <div class="text-xs text-gray-500">@{{ acc.username }}</div>
                                     </div>
                                 </div>
-                                <!-- Logout/Remove could go here -->
+                                <a href="/auth/disconnect/{{ provider }}/{{ acc.id }}"
+                                    class="text-gray-400 hover:text-red-500 transition p-1" title="Disconnect account">
+                                    <i class="fas fa-times"></i>
+                                </a>
                             </div>
                             {% endfor %}
                             {% endfor %}

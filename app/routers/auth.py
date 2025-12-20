@@ -180,6 +180,25 @@ async def auth_callback(request: Request, provider: str, session: str | None = N
     return RedirectResponse(url="/")
 
 
+@router.get("/disconnect/{provider}/{account_id}")
+async def disconnect(request: Request, provider: str, account_id: str) -> RedirectResponse:
+    accounts = request.session.get("accounts", {})
+    if provider in accounts:
+        # Filter out the account with the matching ID
+        accounts[provider] = [acc for acc in accounts[provider] if acc.get("id") != account_id]
+
+        # If no accounts left for this provider, we could optionally remove the key
+        if not accounts[provider]:
+            del accounts[provider]
+
+        if not accounts:
+            request.session.pop("accounts", None)
+        else:
+            request.session["accounts"] = accounts
+
+    return RedirectResponse(url="/")
+
+
 @router.get("/logout")
 async def logout(request: Request) -> RedirectResponse:
     request.session.pop("accounts", None)
