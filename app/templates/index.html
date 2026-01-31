@@ -360,19 +360,22 @@
         }
 
         function handleFileSelect(event) {
-            const files = event.target.files;
+            const fileInput = document.getElementById('dropzone-file');
+            // ファイル選択あるいはドロップ/ペースト後のinputの状態を取得
+            const files = fileInput.files;
             const previewGrid = document.getElementById('previewGrid');
 
+            // 4枚制限のチェックと強制カット
             if (files.length > 4) {
                 alert("Maximum 4 images allowed");
-                event.target.value = ""; // Clear
-                previewGrid.innerHTML = "";
-                return;
+                const dataTransfer = new DataTransfer();
+                Array.from(files).slice(0, 4).forEach(file => dataTransfer.items.add(file));
+                fileInput.files = dataTransfer.files;
             }
 
             previewGrid.innerHTML = "";
 
-            Array.from(files).forEach(file => {
+            Array.from(fileInput.files).forEach(file => {
                 const reader = new FileReader();
                 reader.onload = function (e) {
                     const div = document.createElement('div');
@@ -387,12 +390,103 @@
             });
         }
 
+        // クリップボードからの貼り付け（画像）をサポート
+        document.addEventListener('paste', function (e) {
+            const clipboardData = e.clipboardData || window.clipboardData;
+            if (!clipboardData) return;
+
+            const items = clipboardData.items;
+            let pastedImages = [];
+
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image/') !== -1) {
+                    const file = items[i].getAsFile();
+                    if (file) {
+                        pastedImages.push(file);
+                    }
+                }
+            }
+
+            if (pastedImages.length > 0) {
+                e.preventDefault(); // デフォルトの貼り付け動作を阻止
+                const fileInput = document.getElementById('dropzone-file');
+                const dataTransfer = new DataTransfer();
+
+                // 既存のファイルを追加
+                Array.from(fileInput.files).forEach(file => {
+                    dataTransfer.items.add(file);
+                });
+
+                // 新しく貼り付けられた画像を追加（合計4枚まで）
+                pastedImages.forEach(file => {
+                    if (dataTransfer.items.length < 4) {
+                        dataTransfer.items.add(file);
+                    }
+                });
+
+                if (fileInput.files.length + pastedImages.length > 4) {
+                    alert("Maximum 4 images allowed. Some images were skipped.");
+                }
+
+                fileInput.files = dataTransfer.files;
+
+                // 直接描画関数を呼ぶ
+                handleFileSelect({ target: fileInput });
+            }
+        });
+
+        // ドラッグ&ドロップのサポート
+        const dropZone = document.querySelector('label[for="dropzone-file"]');
+        if (dropZone) {
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }, false);
+            });
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => {
+                    dropZone.classList.add('bg-indigo-50', 'border-indigo-400');
+                }, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => {
+                    dropZone.classList.remove('bg-indigo-50', 'border-indigo-400');
+                }, false);
+            });
+
+            dropZone.addEventListener('drop', e => {
+                const fileInput = document.getElementById('dropzone-file');
+                const dataTransfer = new DataTransfer();
+                const droppedFiles = e.dataTransfer.files;
+
+                // 既存のファイル + ドロップされたファイル
+                Array.from(fileInput.files).forEach(file => dataTransfer.items.add(file));
+                Array.from(droppedFiles).forEach(file => {
+                    if (dataTransfer.items.length < 4 && file.type.startsWith('image/')) {
+                        dataTransfer.items.add(file);
+                    }
+                });
+
+                if (dataTransfer.items.length > 4) {
+                    alert("Maximum 4 images allowed.");
+                }
+
+                fileInput.files = dataTransfer.files;
+                handleFileSelect({ target: fileInput });
+            }, false);
+        }
+
         // Toggle accounts section on mobile
         function toggleAccounts() {
             const section = document.getElementById('accountsSection');
             const chevron = document.getElementById('accountsChevron');
-            section.classList.toggle('hidden');
-            chevron.classList.toggle('rotate-180');
+            if (section && chevron) {
+                section.classList.toggle('hidden');
+                chevron.classList.toggle('rotate-180');
+            }
         }
 
         // ===== ここからローカル保存関連 =====
