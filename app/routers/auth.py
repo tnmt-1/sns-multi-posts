@@ -62,19 +62,18 @@ async def login_bluesky(request: Request, handle: str = Form(...), password: str
         if "bluesky" not in accounts:
             accounts["bluesky"] = []
 
-        account_info: BlueskyAccount = {
-            "id": profile.did,
-            "username": profile.handle,
-            "name": profile.display_name or profile.handle,
-            "handle": handle,
-            # 警告: パスワードをセッションに保存するのは理想的ではありませんが、フルOAuthなしで atproto クライアントを再利用するために必要です。
-            "password": password,
-        }
+        # Pydantic モデルを使用してデータを検証
+        account_model = BlueskyAccount(
+            id=profile.did,
+            username=profile.handle,
+            name=profile.display_name or profile.handle,
+            handle=handle,
+            password=password,
+        )
 
-        # 重複を避ける
-        existing_ids = [acc["id"] for acc in accounts["bluesky"]]
-        if account_info["id"] not in existing_ids:
-            accounts["bluesky"].append(account_info)
+        # 重複を避ける（IDで判定）
+        if not any(acc["id"] == account_model.id for acc in accounts["bluesky"]):
+            accounts["bluesky"].append(account_model.model_dump())
 
         request.session["accounts"] = accounts
         return RedirectResponse(url="/", status_code=303)
@@ -123,17 +122,17 @@ async def auth_callback(request: Request, provider: str, session: str | None = N
         if "twitter" not in accounts:
             accounts["twitter"] = []
 
-        account_info: TwitterAccount = {
-            "id": user_data.get("id_str"),
-            "username": user_data.get("screen_name"),
-            "name": user_data.get("name"),
-            "token": token,
-        }
+        # Pydantic モデルを使用してデータを検証
+        account_model = TwitterAccount(
+            id=user_data.get("id_str"),
+            username=user_data.get("screen_name"),
+            name=user_data.get("name"),
+            token=token,
+        )
 
-        # 重複を避ける
-        existing_ids = [acc["id"] for acc in accounts["twitter"]]
-        if account_info["id"] not in existing_ids:
-            accounts["twitter"].append(account_info)
+        # 重複を避ける（IDで判定）
+        if not any(acc["id"] == account_model.id for acc in accounts["twitter"]):
+            accounts["twitter"].append(account_model.model_dump())
 
         request.session["accounts"] = accounts
 
@@ -161,17 +160,18 @@ async def auth_callback(request: Request, provider: str, session: str | None = N
             if "misskey" not in accounts:
                 accounts["misskey"] = []
 
-            account_info: MisskeyAccount = {
-                "id": user.get("id"),
-                "username": user.get("username"),
-                "name": user.get("name"),
-                "instance": instance,
-                "token": token,
-            }
+            # Pydantic モデルを使用してデータを検証
+            account_model = MisskeyAccount(
+                id=user.get("id"),
+                username=user.get("username"),
+                name=user.get("name"),
+                instance=instance,
+                token=token,
+            )
 
-            existing_ids = [acc["id"] for acc in accounts["misskey"]]
-            if account_info["id"] not in existing_ids:
-                accounts["misskey"].append(account_info)
+            # 重複を避ける（IDで判定）
+            if not any(acc["id"] == account_model.id for acc in accounts["misskey"]):
+                accounts["misskey"].append(account_model.model_dump())
 
             request.session["accounts"] = accounts
             request.session.pop("misskey_pending", None)

@@ -280,7 +280,7 @@ async def post_to_bluesky(
     画像が提供されていない場合、最初に見つかった URL がカードとして埋め込まれます。
 
     Args:
-        account: ハンドル名とパスワードを含むアカウント辞書
+        account: ハンドル名とパスワードを含む BlueskyAccount オブジェクト
         text: 投稿テキスト
         images: (画像バイト, MIMEタイプ) のタプルのリスト（オプション）
 
@@ -295,8 +295,8 @@ async def post_to_bluesky(
 
     try:
         client = Client()
-        client.login(account["handle"], account["password"])
-        logger.info(f"Logged in to Bluesky as {account['handle']}")
+        client.login(account.handle, account.password)
+        logger.info(f"Logged in to Bluesky as {account.handle}")
 
         # テキストから URL を解析してファセットを作成
         text_builder, urls = _parse_urls(text)
