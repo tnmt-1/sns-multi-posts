@@ -44,8 +44,8 @@ async def create_post(
         )
 
     # 文字数制限の検証
-    # 文字数制限: Twitter 280, Bluesky 300, Misskey 3000
-    limits = {"twitter": 280, "bluesky": 300, "misskey": 3000}
+    # 文字数制限: Twitter 140, Bluesky 300, Misskey 3000
+    limits = {"twitter": 140, "bluesky": 300, "misskey": 3000}
 
     def get_twitter_length(t: str) -> int:
         url_pattern = re.compile(r"https?://[^\s]+")
