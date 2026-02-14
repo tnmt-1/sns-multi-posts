@@ -1,13 +1,15 @@
 import io
 import logging
 import re
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
+import httpx
 import tweepy
 
 from app.config import settings
-from app.services.base import PostResult
+from app.services.base import ImageData, PostResult, TwitterAccount, TwitterToken
 
 logger = logging.getLogger(__name__)
 
@@ -30,20 +32,17 @@ class TwitterService:
 
     async def post(
         self,
-        account: dict[str, Any],
+        account: Mapping[str, Any],
         text: str,
-        images: list[tuple[bytes, str]] | None = None,
+        images: list[ImageData] | None = None,
         **kwargs: Any,
     ) -> PostResult:
         try:
-            token = account.get("token")
-            if not token:
-                token = account  # 後方互換性のため
-
-            resp_data = await post_to_twitter(token, text, images)
+            acc_model = TwitterAccount.model_validate(account)
+            # account.token は TwitterToken モデルになっているはず
+            resp_data = await post_to_twitter(acc_model.token, text, images)
             post_id = str(resp_data.get("id"))
             # Twitter の URL 形式: https://twitter.com/user/status/id
-            # ユーザー名が不明な場合は ID のみで生成、あるいは Twitter の仕様に合わせる
             return PostResult(
                 success=True,
                 provider=self.PROVIDER_NAME,
@@ -55,11 +54,14 @@ class TwitterService:
             return PostResult(success=False, provider=self.PROVIDER_NAME, error=str(e))
 
 
-def _log_rate_limit_info(response: Any, endpoint: str) -> None:
+def _log_rate_limit_info(response: httpx.Response | object, endpoint: str) -> None:
     """Twitter API のレスポンスヘッダーからレート制限情報をログに記録します。"""
     try:
         # レスポンスヘッダーからレート制限情報の取得を試みる
-        if hasattr(response, "_headers"):
+        headers = {}
+        if isinstance(response, httpx.Response):
+            headers = response.headers
+        elif hasattr(response, "_headers"):
             headers = response._headers
         elif hasattr(response, "headers"):
             headers = response.headers
@@ -95,13 +97,13 @@ def _get_filename_from_mime_type(mime_type: str) -> str:
 
 
 async def post_to_twitter(
-    token: dict[str, Any] | str, text: str, images: list[tuple[bytes, str]] | None = None
-) -> dict[str, Any]:
+    token: TwitterToken, text: str, images: list[ImageData] | None = None
+) -> dict[str, str | int]:
     """
     OAuth 1.0a 認証を使用して、画像付きのツイートを投稿します（オプション）。
 
     Args:
-        token: oauth_token と oauth_token_secret を含む OAuth 1.0a トークン辞書
+        token: oauth_token と oauth_token_secret を含む TwitterToken
         text: ツイート本文
         images: (画像バイト, MIMEタイプ) のタプルのリスト（オプション）
 
@@ -115,13 +117,10 @@ async def post_to_twitter(
     if images is None:
         images = []
 
-    if not isinstance(token, dict):
-        raise ValueError("Token must be a dictionary for OAuth 1.0a")
-
     consumer_key = settings.twitter_client_id
     consumer_secret = settings.twitter_client_secret
-    access_token = token.get("oauth_token")
-    access_token_secret = token.get("oauth_token_secret")
+    access_token = token.oauth_token
+    access_token_secret = token.oauth_token_secret
 
     if not consumer_key or not consumer_secret or not access_token or not access_token_secret:
         raise ValueError("Missing OAuth 1.0a credentials")

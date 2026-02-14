@@ -1,13 +1,15 @@
 import io
 import logging
 import re
-from typing import Any
+from collections.abc import Mapping
+from typing import Any, cast
 
 import httpx
 from atproto import Client, client_utils, models
 from PIL import Image
+from pydantic import BaseModel
 
-from app.services.base import PostResult
+from app.services.base import BlueskyAccount, ImageData, PostResult
 
 logger = logging.getLogger(__name__)
 
@@ -24,18 +26,19 @@ class BlueskyService:
 
     async def post(
         self,
-        account: dict[str, Any],
+        account: Mapping[str, Any],
         text: str,
-        images: list[tuple[bytes, str]] | None = None,
+        images: list[ImageData] | None = None,
         **kwargs: Any,
     ) -> PostResult:
         try:
-            resp = await post_to_bluesky(account, text, images)
+            acc_model = BlueskyAccount.model_validate(account)
+            resp = await post_to_bluesky(acc_model, text, images)
             # resp は models.ComAtprotoRepoCreateRecord.Response
             uri = getattr(resp, "uri", "")
             post_id = uri.split("/")[-1] if uri else None
             # Bluesky の Web URL 形式: https://bsky.app/profile/{handle}/post/{post_id}
-            handle = account.get("handle", account.get("username", ""))
+            handle = acc_model.handle
             url = f"https://bsky.app/profile/{handle}/post/{post_id}" if handle and post_id else None
 
             return PostResult(
@@ -130,12 +133,18 @@ def _parse_urls(text: str) -> tuple[client_utils.TextBuilder, list[str]]:
     return builder, urls
 
 
-async def _get_url_metadata(url: str) -> dict[str, str] | None:
+class BlueskyMetadata(BaseModel):
+    title: str
+    description: str
+    image: str
+
+
+async def _get_url_metadata(url: str) -> BlueskyMetadata | None:
     """
     HTML ページをスクレイピングして URL のメタデータを取得します。
 
     Returns:
-        タイトル、説明、画像 URL を含む辞書。失敗した場合は None。
+        タイトル、説明、画像 URL を含む Pydantic モデル。失敗した場合は None。
     """
     try:
         from bs4 import BeautifulSoup
@@ -151,14 +160,14 @@ async def _get_url_metadata(url: str) -> dict[str, str] | None:
             soup = BeautifulSoup(response.text, "html.parser")
 
             # Open Graph タグを優先し、次に通常の meta タグから取得を試みる
-            title = None
-            description = None
-            image = None
+            title: str | None = None
+            description: str | None = None
+            image: str | None = None
 
             # タイトルの取得
             og_title = soup.find("meta", property="og:title")
             if og_title and og_title.get("content"):
-                title = og_title.get("content")
+                title = cast(str, og_title.get("content"))
             else:
                 title_tag = soup.find("title")
                 if title_tag:
@@ -167,16 +176,16 @@ async def _get_url_metadata(url: str) -> dict[str, str] | None:
             # 説明の取得
             og_description = soup.find("meta", property="og:description")
             if og_description and og_description.get("content"):
-                description = og_description.get("content")
+                description = cast(str, og_description.get("content"))
             else:
                 desc_tag = soup.find("meta", attrs={"name": "description"})
                 if desc_tag and desc_tag.get("content"):
-                    description = desc_tag.get("content")
+                    description = cast(str, desc_tag.get("content"))
 
             # 画像の取得
             og_image = soup.find("meta", property="og:image")
             if og_image and og_image.get("content"):
-                image = og_image.get("content")
+                image = cast(str, og_image.get("content"))
 
             # 画像 URL が絶対パスであることを確認
             if image and not image.startswith("http"):
@@ -187,11 +196,11 @@ async def _get_url_metadata(url: str) -> dict[str, str] | None:
             desc_preview = description[:50] if description else None
             logger.info(f"Scraped metadata - Title: {title}, Description: {desc_preview}..., Image: {image}")
 
-            return {
-                "title": title or "",
-                "description": description or "",
-                "image": image or "",
-            }
+            return BlueskyMetadata(
+                title=title or "",
+                description=description or "",
+                image=image or "",
+            )
     except Exception as e:
         logger.warning(f"Failed to fetch metadata for {url}: {e}", exc_info=True)
         return None
@@ -215,17 +224,17 @@ async def _create_embed_card(url: str, client: Client) -> models.AppBskyEmbedExt
         metadata = await _get_url_metadata(url)
         logger.info(f"Metadata retrieved: {metadata}")
 
-        if not metadata or not metadata["title"]:
+        if not metadata or not metadata.title:
             logger.warning(f"No metadata found for {url}")
             return None
 
         # サムネイル画像があればダウンロードしてアップロード
         thumb = None
-        if metadata["image"]:
+        if metadata.image:
             try:
-                logger.info(f"Downloading thumbnail from: {metadata['image']}")
+                logger.info(f"Downloading thumbnail from: {metadata.image}")
                 async with httpx.AsyncClient(follow_redirects=True) as http_client:
-                    img_response = await http_client.get(metadata["image"], timeout=10.0)
+                    img_response = await http_client.get(metadata.image, timeout=10.0)
                     img_response.raise_for_status()
                     img_bytes = img_response.content
                     logger.info(f"Downloaded {len(img_bytes)} bytes")
@@ -246,8 +255,8 @@ async def _create_embed_card(url: str, client: Client) -> models.AppBskyEmbedExt
         # 外部リンク埋め込みの作成
         external = models.AppBskyEmbedExternal.External(
             uri=url,
-            title=metadata["title"],
-            description=metadata["description"],
+            title=metadata.title,
+            description=metadata.description,
             thumb=thumb,
         )
 
@@ -262,8 +271,8 @@ async def _create_embed_card(url: str, client: Client) -> models.AppBskyEmbedExt
 
 
 async def post_to_bluesky(
-    account: dict[str, Any], text: str, images: list[tuple[bytes, str]] | None = None
-) -> dict[str, Any]:
+    account: BlueskyAccount, text: str, images: list[ImageData] | None = None
+) -> models.ComAtprotoRepoCreateRecord.Response:
     """
     Bluesky に投稿します（オプションで画像付き）。
 
@@ -295,7 +304,7 @@ async def post_to_bluesky(
         logger.info(f"Found {len(urls)} URLs in text: {urls}")
 
         # 画像をアップロード
-        blob_refs = []
+        blob_refs: list[models.AppBskyEmbedImages.Image] = []
         if images:
             for i, (image_byte_data, _mime_type) in enumerate(images):
                 try:
@@ -308,7 +317,7 @@ async def post_to_bluesky(
                     raise
 
         # 埋め込みタイプを決定
-        embed = None
+        embed: models.AppBskyEmbedImages.Main | models.AppBskyEmbedExternal.Main | None = None
         if blob_refs:
             # 画像を優先
             logger.info("Creating image embed (images provided)")
@@ -325,11 +334,10 @@ async def post_to_bluesky(
             logger.info("No images or URLs found, no embed will be added")
 
         logger.info(f"Final embed value: {embed}")
-        client.send_post(text=text, embed=embed, facets=facets, langs=["ja"])
+        resp = client.send_post(text=text, embed=embed, facets=facets, langs=["ja"])
         logger.info("Successfully posted to Bluesky")
 
-        # 他のサービス（Twitter, Misskey）と同様に辞書型で結果を返す
-        return {"success": True}
+        return resp
     except Exception as e:
         logger.error(f"Failed to post to Bluesky: {type(e).__name__}: {e}", exc_info=True)
         raise

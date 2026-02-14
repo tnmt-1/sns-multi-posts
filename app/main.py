@@ -1,5 +1,6 @@
 import logging
 import os
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
@@ -38,7 +39,7 @@ app.include_router(post.router)
 
 @app.get("/")
 async def read_root(request: Request) -> Response:
-    accounts = request.session.get("accounts", {})
+    accounts: dict[str, Any] = request.session.get("accounts", {})
 
     # セッションからフラッシュメッセージを取得
     flash_message = request.session.pop("flash_message", None)

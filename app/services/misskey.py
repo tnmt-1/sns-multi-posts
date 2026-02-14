@@ -1,9 +1,10 @@
 import logging
-from typing import Any, cast
+from collections.abc import Mapping
+from typing import Any
 
 import httpx
 
-from app.services.base import PostResult
+from app.services.base import ImageData, MisskeyAccount, PostResult
 
 logger = logging.getLogger(__name__)
 
@@ -20,17 +21,18 @@ class MisskeyService:
 
     async def post(
         self,
-        account: dict[str, Any],
+        account: Mapping[str, Any],
         text: str,
-        images: list[tuple[bytes, str]] | None = None,
+        images: list[ImageData] | None = None,
         **kwargs: Any,
     ) -> PostResult:
         try:
-            visibility = kwargs.get("visibility", "public")
-            resp = await post_to_misskey(account, text, images, visibility=visibility)
+            acc_model = MisskeyAccount.model_validate(account)
+            visibility = str(kwargs.get("visibility", "public"))
+            resp = await post_to_misskey(acc_model, text, images, visibility=visibility)
             note = resp.get("createdNote", {})
             post_id = note.get("id")
-            instance = account.get("instance")
+            instance = acc_model.instance
             url = f"https://{instance}/notes/{post_id}" if instance and post_id else None
 
             return PostResult(
@@ -62,16 +64,16 @@ def _log_response_headers(headers: httpx.Headers, endpoint: str) -> None:
 
 
 async def post_to_misskey(
-    account: dict[str, str],
+    account: MisskeyAccount,
     text: str,
-    images: list[tuple[bytes, str]] | None = None,
+    images: list[ImageData] | None = None,
     visibility: str = "public",
 ) -> dict[str, Any]:
     """
     Misskey に投稿します（オプションで画像付き）。
 
     Args:
-        account: インスタンスとトークンを含むアカウント辞書
+        account: インスタンスとトークンを含むアカウント情報
         text: 投稿テキスト
         images: (画像バイト, MIMEタイプ) のタプルのリスト（オプション）
         visibility: 投稿の公開範囲 (public, home, followers, specified)
@@ -84,8 +86,8 @@ async def post_to_misskey(
     """
     if images is None:
         images = []
-    instance = account["instance"]
-    token = account["token"]
+    instance = account.instance
+    token = account.token
 
     file_ids: list[str] = []
     if images:
@@ -116,7 +118,7 @@ async def post_to_misskey(
                     raise
 
     url = f"https://{instance}/api/notes/create"
-    payload: dict[str, Any] = {
+    payload: dict[str, str | list[str]] = {
         "i": token,
         "text": text,
         "visibility": visibility,
@@ -132,8 +134,7 @@ async def post_to_misskey(
             logger.info(
                 f"Successfully posted to Misskey (note_id: {resp.json().get('createdNote', {}).get('id', 'unknown')})"
             )
-            # Misskey API のレスポンスはさまざまなフィールドを含むため、dict[str, Any] として扱う
-            return cast(dict[str, Any], resp.json())
+            return resp.json()
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 429:
             logger.error("Rate limit exceeded while creating Misskey note")

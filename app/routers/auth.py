@@ -1,6 +1,6 @@
 import logging
 import uuid
-from typing import cast
+from typing import Any
 
 import httpx
 from atproto import Client
@@ -10,6 +10,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.responses import RedirectResponse, Response
 
 from app.config import settings
+from app.services.base import BlueskyAccount, MisskeyAccount, TwitterAccount
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ async def login(request: Request, provider: str) -> Response:
     if provider == "twitter":
         # authorize_redirect は実際には Starlette Response を返すが、
         # ライブラリ側の型が Any になっているため Response として明示する
-        return cast(Response, await oauth.twitter.authorize_redirect(request, redirect_uri))
+        return await oauth.twitter.authorize_redirect(request, redirect_uri)
     elif provider == "bluesky":
         return templates.TemplateResponse("auth/bluesky_login.html", {"request": request})
     elif provider == "misskey":
@@ -57,18 +58,17 @@ async def login_bluesky(request: Request, handle: str = Form(...), password: str
         profile = client.login(handle, password)
 
         # セッションにアカウント情報を保存
-        accounts = request.session.get("accounts", {})
+        accounts: dict[str, Any] = request.session.get("accounts", {})
         if "bluesky" not in accounts:
             accounts["bluesky"] = []
 
-        account_info = {
+        account_info: BlueskyAccount = {
             "id": profile.did,
             "username": profile.handle,
             "name": profile.display_name or profile.handle,
             "handle": handle,
             # 警告: パスワードをセッションに保存するのは理想的ではありませんが、フルOAuthなしで atproto クライアントを再利用するために必要です。
             "password": password,
-            # 実際のアプリでは、可能であればセッション文字列やリフレッシュトークンを使用すべきです。
         }
 
         # 重複を避ける
@@ -107,7 +107,7 @@ async def login_misskey(request: Request, instance: str = Form(...)) -> Response
 
 @router.get("/callback/{provider}")
 async def auth_callback(request: Request, provider: str, session: str | None = None) -> RedirectResponse:
-    accounts = request.session.get("accounts", {})
+    accounts: dict[str, Any] = request.session.get("accounts", {})
 
     if provider == "twitter":
         token = await oauth.twitter.authorize_access_token(request)
@@ -120,12 +120,10 @@ async def auth_callback(request: Request, provider: str, session: str | None = N
 
         user_data = resp.json()
 
-        # アカウント情報をセッションに保存
-        accounts = request.session.get("accounts", {})
         if "twitter" not in accounts:
             accounts["twitter"] = []
 
-        account_info = {
+        account_info: TwitterAccount = {
             "id": user_data.get("id_str"),
             "username": user_data.get("screen_name"),
             "name": user_data.get("name"),
@@ -163,7 +161,7 @@ async def auth_callback(request: Request, provider: str, session: str | None = N
             if "misskey" not in accounts:
                 accounts["misskey"] = []
 
-            account_info = {
+            account_info: MisskeyAccount = {
                 "id": user.get("id"),
                 "username": user.get("username"),
                 "name": user.get("name"),
@@ -186,11 +184,11 @@ async def disconnect(request: Request, provider: str, account_id: str) -> Redire
     accounts = request.session.get("accounts", {})
     if provider in accounts:
         # 一致するIDのアカウントを除外
-        accounts[provider] = [acc for acc in accounts[provider] if acc.get("id") != account_id]
+        accounts[provider] = [acc for acc in accounts.get(provider, []) if str(acc.get("id")) != account_id]
 
-        # このプロバイダーAccountがなくなった場合、キーを削除
-        if not accounts[provider]:
-            del accounts[provider]
+        # このプロバイダーのAccountがなくなった場合、キーを削除
+        if not accounts.get(provider):
+            accounts.pop(provider, None)
 
         if not accounts:
             request.session.pop("accounts", None)

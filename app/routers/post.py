@@ -1,12 +1,14 @@
 import asyncio
 import logging
-from typing import Annotated
+from collections.abc import Mapping
+from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from app.services import get_service
+from app.services.base import ImageData, SNSProvider
 
 router = APIRouter(prefix="/post", tags=["post"])
 templates = Jinja2Templates(directory="app/templates")
@@ -24,10 +26,10 @@ async def create_post(
     images: Annotated[list[UploadFile] | None, File()] = None,
 ) -> Response:
     # selected_accounts は "provider:id" 形式の文字列リストとして渡されます
-    accounts_session = request.session.get("accounts", {})
+    accounts_session: dict[str, Any] = request.session.get("accounts", {})
 
     # 画像の処理
-    images_data = []  # (コンテンツ, コンテンツタイプ) のリスト
+    images_data: list[ImageData] = []  # (コンテンツ, コンテンツタイプ) のリスト
     if images:
         for img in images:
             if img.filename:
@@ -39,7 +41,7 @@ async def create_post(
             "index.html", {"request": request, "error": "最大4枚まで画像を添付できます", "accounts": accounts_session}
         )
 
-    targets = []
+    targets: list[tuple[str, Mapping[str, Any], SNSProvider]] = []
     for acc_str in selected_accounts:
         provider, acc_id = acc_str.split(":", 1)
         service = get_service(provider)
@@ -64,8 +66,8 @@ async def create_post(
 
         # アカウントデータを探す
         if provider in accounts_session:
-            for acc in accounts_session[provider]:
-                if str(acc["id"]) == acc_id:
+            for acc in accounts_session.get(provider, []):
+                if str(acc.get("id")) == acc_id:
                     targets.append((provider, acc, service))
                     break
 
@@ -73,7 +75,7 @@ async def create_post(
     tasks = []
     for provider, acc, service in targets:
         # プロバイダー固有の追加パラメータ
-        kwargs = {}
+        kwargs: dict[str, Any] = {}
         if provider == "misskey":
             kwargs["visibility"] = misskey_visibility
 
