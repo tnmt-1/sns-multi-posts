@@ -7,8 +7,8 @@ logger = logging.getLogger(__name__)
 
 
 def _log_response_headers(headers: httpx.Headers, endpoint: str) -> None:
-    """Log response headers including rate limit info if available."""
-    # Misskey may include rate limit headers (depends on instance configuration)
+    """可能であればレート制限情報を含むレスポンスヘッダーをログに記録します。"""
+    # Misskey はレート制限ヘッダーを含む場合があります（インスタンスの設定によります）
     rate_limit_headers = {
         "x-ratelimit-limit": headers.get("x-ratelimit-limit"),
         "x-ratelimit-remaining": headers.get("x-ratelimit-remaining"),
@@ -30,19 +30,19 @@ async def post_to_misskey(
     visibility: str = "public",
 ) -> dict[str, Any]:
     """
-    Post to Misskey with optional images.
+    Misskey に投稿します（オプションで画像付き）。
 
     Args:
-        account: Account dict containing instance and token
-        text: Post text content
-        images: Optional list of (image_bytes, mime_type) tuples
-        visibility: Post visibility (public, home, followers, specified)
+        account: インスタンスとトークンを含むアカウント辞書
+        text: 投稿テキスト
+        images: (画像バイト, MIMEタイプ) のタプルのリスト（オプション）
+        visibility: 投稿の公開範囲 (public, home, followers, specified)
 
     Returns:
-        Misskey API response dict
+        Misskey API のレスポンス辞書
 
     Raises:
-        httpx.HTTPStatusError: For HTTP errors including 429 rate limit
+        httpx.HTTPStatusError: 429 レート制限を含む HTTP エラーの場合
     """
     if images is None:
         images = []
@@ -54,12 +54,12 @@ async def post_to_misskey(
         async with httpx.AsyncClient() as client:
             for i, (image_byte_data, _mime_type) in enumerate(images):
                 try:
-                    # Upload to drive/files/create
+                    # drive/files/create にアップロード
                     files = {"file": image_byte_data}
                     data = {"i": token}
-                    # httpx handles multipart if files is passed
-                    # But we also need 'i' (token) in the body.
-                    # Misskey API expects 'i' as a parameter.
+                    # files が渡されると httpx はマルチパートを処理します
+                    # ただし、ボディに 'i' (トークン) も必要です。
+                    # Misskey API はパラメータとして 'i' を期待しています。
 
                     resp = await client.post(f"https://{instance}/api/drive/files/create", data=data, files=files)
                     _log_response_headers(resp.headers, "drive/files/create")

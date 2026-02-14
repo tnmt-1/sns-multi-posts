@@ -1,13 +1,13 @@
-# Vercel requires a handler variable, but for FastAPI with vercel-python,
-# we usually just expose the app instance.
-# However, depending on the WSGI/ASGI adapter used by Vercel,
-# sometimes we need to wrap it.
-# The @vercel/python builder supports ASGI apps directly if 'app' is exposed.
+# Vercelはhandler変数を必要としますが、FastAPIとvercel-pythonの組み合わせでは、
+# 通常appインスタンスを公開するだけで十分です。
+# ただし、Vercelが使用するWSGI/ASGIアダプターによっては、
+# ラップが必要になる場合があります。
+# @vercel/pythonビルダーは、'app'が公開されていればASGIアプリを直接サポートします。
 
 import sys
 from pathlib import Path
 
-# Add parent directory to path for imports
+# インポートのために親ディレクトリをパスに追加します
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.main import app  # noqa: F401

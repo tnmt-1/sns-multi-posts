@@ -9,14 +9,14 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-# URL pattern for detecting links
+# リンク検出用のURLパターン
 URL_PATTERN = re.compile(r"https?://[^\s]+")
 
 
 def _compress_image(image_bytes: bytes, max_size: int = 975000) -> bytes:
     """
-    Compress image to be under max_size bytes.
-    Bluesky has a strict blob limit of around 1MB (approx 976KB).
+    画像を max_size バイト以下に圧縮します。
+    Bluesky は約1MB（約976KB）の厳格な blob 制限があります。
     """
     if len(image_bytes) <= max_size:
         return image_bytes
@@ -24,11 +24,11 @@ def _compress_image(image_bytes: bytes, max_size: int = 975000) -> bytes:
     try:
         img = Image.open(io.BytesIO(image_bytes))
 
-        # Convert to RGB if necessary (e.g. for PNGs with transparency to JPEG)
+        # 必要に応じて RGB に変換（例：透明度のある PNG を JPEG に変換する場合など）
         if img.mode in ("RGBA", "P"):
             img = img.convert("RGB")
 
-        # Initial attempt: convert to JPEG with high quality
+        # 最初の試行：高品質の JPEG に変換
         output = io.BytesIO()
         img.save(output, format="JPEG", quality=85)
         compressed_data = output.getvalue()
@@ -36,7 +36,7 @@ def _compress_image(image_bytes: bytes, max_size: int = 975000) -> bytes:
         if len(compressed_data) <= max_size:
             return compressed_data
 
-        # If still too big, try reducing quality
+        # まだ大きすぎる場合は、品質を下げてみる
         for quality in [70, 50, 30]:
             output = io.BytesIO()
             img.save(output, format="JPEG", quality=quality)
@@ -44,7 +44,7 @@ def _compress_image(image_bytes: bytes, max_size: int = 975000) -> bytes:
             if len(compressed_data) <= max_size:
                 return compressed_data
 
-        # If still too big, resize
+        # それでも大きすぎる場合は、リサイズする
         while len(compressed_data) > max_size:
             width, height = img.size
             ratio = 0.8
@@ -62,29 +62,29 @@ def _compress_image(image_bytes: bytes, max_size: int = 975000) -> bytes:
         return compressed_data
     except Exception as e:
         logger.warning(f"Failed to compress image: {e}")
-        return image_bytes  # Return original if compression fails
+        return image_bytes  # 圧縮に失敗した場合はオリジナルを返す
 
 
 def _parse_urls(text: str) -> tuple[client_utils.TextBuilder, list[str]]:
     """
-    Parse text and detect URLs, creating facets for them.
+    テキストを解析して URL を検出し、それらのファセットを作成します。
 
     Returns:
-        Tuple of (TextBuilder with facets, list of URLs found)
+        (ファセット付き TextBuilder, 見つかった URL のリスト) のタプル
     """
     builder = client_utils.TextBuilder()
     urls = []
 
-    # Split text by URL pattern
+    # URL パターンでテキストを分割
     parts = re.split(f"({URL_PATTERN.pattern})", text)
 
     for part in parts:
         if URL_PATTERN.match(part):
-            # This is a URL, add it as a link facet
+            # これが URL の場合、リンクファセットとして追加
             builder.link(part, part)
             urls.append(part)
-        elif part:  # Skip empty strings
-            # This is regular text
+        elif part:  # 空文字列をスキップ
+            # これが通常のテキストの場合
             builder.text(part)
 
     return builder, urls
@@ -92,10 +92,10 @@ def _parse_urls(text: str) -> tuple[client_utils.TextBuilder, list[str]]:
 
 async def _get_url_metadata(url: str) -> dict[str, str] | None:
     """
-    Fetch URL metadata by scraping the HTML page.
+    HTML ページをスクレイピングして URL のメタデータを取得します。
 
     Returns:
-        Dict with title, description, and image URL, or None if failed
+        タイトル、説明、画像 URL を含む辞書。失敗した場合は None。
     """
     try:
         from bs4 import BeautifulSoup
@@ -110,12 +110,12 @@ async def _get_url_metadata(url: str) -> dict[str, str] | None:
 
             soup = BeautifulSoup(response.text, "html.parser")
 
-            # Try to get Open Graph tags first, then fall back to regular meta tags
+            # Open Graph タグを優先し、次に通常の meta タグから取得を試みる
             title = None
             description = None
             image = None
 
-            # Get title
+            # タイトルの取得
             og_title = soup.find("meta", property="og:title")
             if og_title and og_title.get("content"):
                 title = og_title.get("content")
@@ -124,7 +124,7 @@ async def _get_url_metadata(url: str) -> dict[str, str] | None:
                 if title_tag:
                     title = title_tag.string
 
-            # Get description
+            # 説明の取得
             og_description = soup.find("meta", property="og:description")
             if og_description and og_description.get("content"):
                 description = og_description.get("content")
@@ -133,12 +133,12 @@ async def _get_url_metadata(url: str) -> dict[str, str] | None:
                 if desc_tag and desc_tag.get("content"):
                     description = desc_tag.get("content")
 
-            # Get image
+            # 画像の取得
             og_image = soup.find("meta", property="og:image")
             if og_image and og_image.get("content"):
                 image = og_image.get("content")
 
-            # Make sure image URL is absolute
+            # 画像 URL が絶対パスであることを確認
             if image and not image.startswith("http"):
                 from urllib.parse import urljoin
 
@@ -159,19 +159,19 @@ async def _get_url_metadata(url: str) -> dict[str, str] | None:
 
 async def _create_embed_card(url: str, client: Client) -> models.AppBskyEmbedExternal.Main | None:
     """
-    Create an external embed card for the given URL.
+    指定された URL の外部リンク用埋め込みカードを作成します。
 
     Args:
-        url: URL to create embed card for
-        client: Authenticated Bluesky client
+        url: 埋め込みカードを作成する URL
+        client: 認証済みの Bluesky クライアント
 
     Returns:
-        External embed model or None if failed
+        外部リンク埋め込みモデル。失敗した場合は None。
     """
     try:
         logger.info(f"Starting embed card creation for: {url}")
 
-        # Get URL metadata
+        # URL メタデータの取得
         metadata = await _get_url_metadata(url)
         logger.info(f"Metadata retrieved: {metadata}")
 
@@ -179,7 +179,7 @@ async def _create_embed_card(url: str, client: Client) -> models.AppBskyEmbedExt
             logger.warning(f"No metadata found for {url}")
             return None
 
-        # Download and upload thumbnail image if available
+        # サムネイル画像があればダウンロードしてアップロード
         thumb = None
         if metadata["image"]:
             try:
@@ -190,11 +190,11 @@ async def _create_embed_card(url: str, client: Client) -> models.AppBskyEmbedExt
                     img_bytes = img_response.content
                     logger.info(f"Downloaded {len(img_bytes)} bytes")
 
-                    # Compress image if needed
+                    # 必要に応じて画像を圧縮
                     compressed_img = _compress_image(img_bytes)
                     logger.info(f"Compressed to {len(compressed_img)} bytes")
 
-                    # Upload to Bluesky
+                    # Bluesky にアップロード
                     upload = client.upload_blob(compressed_img)
                     thumb = upload.blob
                     logger.info(f"Successfully uploaded thumbnail for {url}")
@@ -203,7 +203,7 @@ async def _create_embed_card(url: str, client: Client) -> models.AppBskyEmbedExt
         else:
             logger.info("No thumbnail image in metadata")
 
-        # Create external embed
+        # 外部リンク埋め込みの作成
         external = models.AppBskyEmbedExternal.External(
             uri=url,
             title=metadata["title"],
@@ -225,21 +225,21 @@ async def post_to_bluesky(
     account: dict[str, Any], text: str, images: list[tuple[bytes, str]] | None = None
 ) -> dict[str, Any]:
     """
-    Post to Bluesky with optional images.
+    Bluesky に投稿します（オプションで画像付き）。
 
-    URLs in the text will be automatically converted to clickable links.
-    If no images are provided, the first URL found will be embedded as a card.
+    テキスト内の URL は自動的にクリック可能なリンクに変換されます。
+    画像が提供されていない場合、最初に見つかった URL がカードとして埋め込まれます。
 
     Args:
-        account: Account dict containing handle and password
-        text: Post text content
-        images: Optional list of (image_bytes, mime_type) tuples
+        account: ハンドル名とパスワードを含むアカウント辞書
+        text: 投稿テキスト
+        images: (画像バイト, MIMEタイプ) のタプルのリスト（オプション）
 
     Returns:
-        Success status dict
+        成功ステータスの辞書
 
     Raises:
-        Exception: For any Bluesky API errors
+        Exception: Bluesky API エラーが発生した場合
     """
     if images is None:
         images = []
@@ -249,12 +249,12 @@ async def post_to_bluesky(
         client.login(account["handle"], account["password"])
         logger.info(f"Logged in to Bluesky as {account['handle']}")
 
-        # Parse URLs from text and create facets
+        # テキストから URL を解析してファセットを作成
         text_builder, urls = _parse_urls(text)
         facets = text_builder.build_facets()
         logger.info(f"Found {len(urls)} URLs in text: {urls}")
 
-        # Upload images
+        # 画像をアップロード
         blob_refs = []
         if images:
             for i, (image_byte_data, _mime_type) in enumerate(images):
@@ -267,14 +267,14 @@ async def post_to_bluesky(
                     logger.error(f"Failed to upload image {i + 1} to Bluesky: {e}")
                     raise
 
-        # Determine embed type
+        # 埋め込みタイプを決定
         embed = None
         if blob_refs:
-            # Images take priority
+            # 画像を優先
             logger.info("Creating image embed (images provided)")
             embed = models.AppBskyEmbedImages.Main(images=blob_refs)
         elif urls:
-            # If no images, create embed card for the first URL
+            # 画像がない場合、最初の URL の埋め込みカードを作成
             logger.info(f"No images provided. Creating embed card for first URL: {urls[0]}")
             embed = await _create_embed_card(urls[0], client)
             if embed:

@@ -10,9 +10,9 @@ logger = logging.getLogger(__name__)
 
 
 def _log_rate_limit_info(response: Any, endpoint: str) -> None:
-    """Log rate limit information from Twitter API response headers."""
+    """Twitter API のレスポンスヘッダーからレート制限情報をログに記録します。"""
     try:
-        # Try to get rate limit info from response headers
+        # レスポンスヘッダーからレート制限情報の取得を試みる
         if hasattr(response, "_headers"):
             headers = response._headers
         elif hasattr(response, "headers"):
@@ -40,7 +40,7 @@ def _log_rate_limit_info(response: Any, endpoint: str) -> None:
 
 
 def _get_filename_from_mime_type(mime_type: str) -> str:
-    """Get appropriate filename based on MIME type."""
+    """MIME タイプに基づいて適切なファイル名を取得します。"""
     if "png" in mime_type:
         return "image.png"
     elif "gif" in mime_type:
@@ -52,19 +52,19 @@ async def post_to_twitter(
     token: dict[str, Any] | str, text: str, images: list[tuple[bytes, str]] | None = None
 ) -> dict[str, Any]:
     """
-    Post a tweet with optional images using OAuth 1.0a authentication.
+    OAuth 1.0a 認証を使用して、画像付きのツイートを投稿します（オプション）。
 
     Args:
-        token: OAuth 1.0a token dict containing oauth_token and oauth_token_secret
-        text: Tweet text content
-        images: Optional list of (image_bytes, mime_type) tuples
+        token: oauth_token と oauth_token_secret を含む OAuth 1.0a トークン辞書
+        text: ツイート本文
+        images: (画像バイト, MIMEタイプ) のタプルのリスト（オプション）
 
     Returns:
-        Tweet data from Twitter API
+        Twitter API からのツイートデータ
 
     Raises:
-        tweepy.TooManyRequests: When rate limit is exceeded (429)
-        tweepy.TweepyException: For other Twitter API errors
+        tweepy.TooManyRequests: レート制限を超えた場合 (429)
+        tweepy.TweepyException: その他の Twitter API エラーの場合
     """
     if images is None:
         images = []
@@ -80,7 +80,7 @@ async def post_to_twitter(
     if not consumer_key or not consumer_secret or not access_token or not access_token_secret:
         raise ValueError("Missing OAuth 1.0a credentials")
 
-    # Upload media using v1.1 API
+    # v1.1 API を使用してメディアをアップロード
     auth = tweepy.OAuth1UserHandler(consumer_key, consumer_secret, access_token, access_token_secret)
     api = tweepy.API(auth)
 
@@ -95,7 +95,7 @@ async def post_to_twitter(
                 logger.info(f"Uploaded image {i + 1}/{len(images)} (media_id: {media.media_id_string})")
             except tweepy.TooManyRequests as e:
                 logger.error(f"Rate limit exceeded while uploading image {i + 1}: {e}")
-                # Try to extract rate limit info from exception
+                # 例外からレート制限情報の抽出を試みる
                 if hasattr(e, "response"):
                     _log_rate_limit_info(e.response, "media_upload")
                 raise
@@ -103,7 +103,7 @@ async def post_to_twitter(
                 logger.error(f"Failed to upload image {i + 1}: {e}")
                 raise
 
-    # Post tweet using v2 API
+    # v2 API を使用してツイートを投稿
     client = tweepy.Client(
         consumer_key=consumer_key,
         consumer_secret=consumer_secret,
@@ -115,14 +115,14 @@ async def post_to_twitter(
         resp = client.create_tweet(text=text, media_ids=media_ids if media_ids else None)
         logger.info(f"Successfully created tweet (id: {resp.data.get('id', 'unknown')})")
 
-        # Log rate limit info if available
+        # 利用可能な場合はレート制限情報をログに記録
         if hasattr(resp, "_response"):
             _log_rate_limit_info(resp._response, "create_tweet")
 
         return resp.data
     except tweepy.TooManyRequests as e:
         logger.error(f"Rate limit exceeded while creating tweet: {e}")
-        # Try to extract rate limit info from exception
+        # 例外からレート制限情報の抽出を試みる
         if hasattr(e, "response"):
             _log_rate_limit_info(e.response, "create_tweet")
         raise

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.templating import Jinja2Templates
 from starlette.responses import RedirectResponse, Response
 
-# Configure logger
+# ロガーの設定
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -18,7 +18,7 @@ templates = Jinja2Templates(directory="app/templates")
 
 oauth = OAuth()
 
-# Twitter (X) Configuration - Switched to OAuth 1.0a for Media Upload support
+# Twitter (X) の設定 - 画像アップロードをサポートするため OAuth 1.0a に切り替えました
 oauth.register(
     name="twitter",
     client_id=os.getenv("TWITTER_CLIENT_ID"),
@@ -55,7 +55,7 @@ async def login_bluesky(request: Request, handle: str = Form(...), password: str
         client = Client()
         profile = client.login(handle, password)
 
-        # Store session
+        # セッションにアカウント情報を保存
         accounts = request.session.get("accounts", {})
         if "bluesky" not in accounts:
             accounts["bluesky"] = []
@@ -65,12 +65,12 @@ async def login_bluesky(request: Request, handle: str = Form(...), password: str
             "username": profile.handle,
             "name": profile.display_name or profile.handle,
             "handle": handle,
-            # WARNING: Storing password in session is not ideal but needed for atproto client reuse without full OAuth
+            # 警告: パスワードをセッションに保存するのは理想的ではありませんが、フルOAuthなしで atproto クライアントを再利用するために必要です。
             "password": password,
-            # In a real app, we should use session string or refresh token if available
+            # 実際のアプリでは、可能であればセッション文字列やリフレッシュトークンを使用すべきです。
         }
 
-        # Avoid duplicates
+        # 重複を避ける
         existing_ids = [acc["id"] for acc in accounts["bluesky"]]
         if account_info["id"] not in existing_ids:
             accounts["bluesky"].append(account_info)
@@ -84,14 +84,14 @@ async def login_bluesky(request: Request, handle: str = Form(...), password: str
 @router.post("/login/misskey")
 async def login_misskey(request: Request, instance: str = Form(...)) -> Response:
     session_id = str(uuid.uuid4())
-    # Clean instance URL
+    # インスタンスURLをクリーンアップ
     instance = instance.replace("https://", "").replace("http://", "").strip("/")
 
     callback_url = str(request.url_for("auth_callback", provider="misskey"))
-    # Append session_id to callback to verify or just use session
-    # MiAuth doesn't pass back custom state in callback URL easily, but we can use the session_id as the key
+    # 検証のために session_id をコールバックに追加するか、単純にセッションを使用します。
+    # MiAuthはコールバックURLでカスタムステートを簡単に返さないため、session_id をキーとして使用します。
 
-    # Store pending auth
+    # 認証待ち情報を保存
     request.session["misskey_pending"] = {"session_id": session_id, "instance": instance}
 
     # 画像アップロードでドライブにファイルを書き込む必要があるため、
@@ -111,7 +111,7 @@ async def auth_callback(request: Request, provider: str, session: str | None = N
     if provider == "twitter":
         token = await oauth.twitter.authorize_access_token(request)
 
-        # Get user info via v1.1 verify_credentials
+        # v1.1 verify_credentials を使用してユーザー情報を取得
         resp = await oauth.twitter.get("account/verify_credentials.json", token=token)
         if resp.status_code != 200:
             logger.error(f"Twitter verify_credentials failed: {resp.status_code} - {resp.text}")
@@ -119,7 +119,7 @@ async def auth_callback(request: Request, provider: str, session: str | None = N
 
         user_data = resp.json()
 
-        # Store account in session
+        # アカウント情報をセッションに保存
         accounts = request.session.get("accounts", {})
         if "twitter" not in accounts:
             accounts["twitter"] = []
@@ -131,7 +131,7 @@ async def auth_callback(request: Request, provider: str, session: str | None = N
             "token": token,
         }
 
-        # Avoid duplicates
+        # 重複を避ける
         existing_ids = [acc["id"] for acc in accounts["twitter"]]
         if account_info["id"] not in existing_ids:
             accounts["twitter"].append(account_info)
@@ -146,7 +146,7 @@ async def auth_callback(request: Request, provider: str, session: str | None = N
         session_id = pending["session_id"]
         instance = pending["instance"]
 
-        # Verify
+        # 検証
         async with httpx.AsyncClient() as client:
             resp = await client.post(f"https://{instance}/api/miauth/{session_id}/check")
             if resp.status_code != 200:
@@ -184,10 +184,10 @@ async def auth_callback(request: Request, provider: str, session: str | None = N
 async def disconnect(request: Request, provider: str, account_id: str) -> RedirectResponse:
     accounts = request.session.get("accounts", {})
     if provider in accounts:
-        # Filter out the account with the matching ID
+        # 一致するIDのアカウントを除外
         accounts[provider] = [acc for acc in accounts[provider] if acc.get("id") != account_id]
 
-        # If no accounts left for this provider, we could optionally remove the key
+        # このプロバイダーAccountがなくなった場合、キーを削除
         if not accounts[provider]:
             del accounts[provider]
 

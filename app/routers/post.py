@@ -12,7 +12,7 @@ from app.services import bluesky, misskey, twitter
 router = APIRouter(prefix="/post", tags=["post"])
 templates = Jinja2Templates(directory="app/templates")
 
-# Configure logger
+# ロガーの設定
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -25,13 +25,13 @@ async def create_post(
     misskey_visibility: Annotated[str, Form()] = "public",
     images: Annotated[list[UploadFile] | None, File()] = None,
 ) -> Response:
-    # selected_accounts comes as a list of strings "provider:id"
-    # But checking checkboxes with same name in HTML form results in a list
+    # selected_accounts は "provider:id" 形式の文字列リストとして渡されます
+    # HTMLフォームで同じ名前のチェックボックスを選択するとリストになります
 
     accounts_session = request.session.get("accounts", {})
 
-    # Process images
-    images_data = []  # List of (content, content_type)
+    # 画像の処理
+    images_data = []  # (コンテンツ, コンテンツタイプ) のリスト
     if images:
         for img in images:
             if img.filename:
@@ -40,11 +40,11 @@ async def create_post(
 
     if len(images_data) > 4:
         return templates.TemplateResponse(
-            "index.html", {"request": request, "error": "Max 4 images allowed", "accounts": accounts_session}
+            "index.html", {"request": request, "error": "最大4枚まで画像を添付できます", "accounts": accounts_session}
         )
 
-    # Validate character limit
-    # Limits: Twitter 280, Bluesky 300, Misskey 3000
+    # 文字数制限の検証
+    # 文字数制限: Twitter 280, Bluesky 300, Misskey 3000
     limits = {"twitter": 280, "bluesky": 300, "misskey": 3000}
 
     def get_twitter_length(t: str) -> int:
@@ -57,7 +57,7 @@ async def create_post(
     for acc_str in selected_accounts:
         provider, acc_id = acc_str.split(":", 1)
 
-        # Calculate specific count for this provider
+        # プロバイダーごとの文字数を計算
         if provider == "twitter":
             current_count = get_twitter_length(text)
         else:
@@ -65,9 +65,7 @@ async def create_post(
 
         limit = limits.get(provider, 3000)
         if current_count > limit:
-            error_msg = (
-                f"Text too long for {provider.capitalize()}. Limit is {limit} characters (Current: {current_count})."
-            )
+            error_msg = f"{provider.capitalize()} の文字数制限を超えています。制限は {limit} 文字です（現在: {current_count} 文字）。"
             return templates.TemplateResponse(
                 "index.html",
                 {
@@ -77,14 +75,14 @@ async def create_post(
                 },
             )
 
-        # Find account data
+        # アカウントデータを探す
         if provider in accounts_session:
             for acc in accounts_session[provider]:
                 if str(acc["id"]) == acc_id:
                     targets.append((provider, acc))
                     break
 
-    # Dispatch posts
+    # 投稿を配信
     tasks = []
 
     for provider, acc in targets:
@@ -95,8 +93,8 @@ async def create_post(
         elif provider == "misskey":
             tasks.append(misskey.post_to_misskey(acc, text, images_data, visibility=misskey_visibility))
 
-    # Run concurrently
-    # We need to handle exceptions individually so one failure doesn't stop others
+    # 並行して実行
+    # 1つの失敗が他に影響しないよう、例外を個別に処理します
 
     async def safe_post(coro: Any, provider: str) -> dict[str, str]:
         try:
@@ -107,13 +105,13 @@ async def create_post(
             error_type = type(e).__name__
             error_msg = str(e)
 
-            # Provide more user-friendly error messages
+            # よりユーザーフレンドリーなエラーメッセージを提供
             if "429" in error_msg or "TooManyRequests" in error_type or "rate limit" in error_msg.lower():
-                user_message = "Rate limit exceeded. Please try again later."
+                user_message = "API制限（レートリミット）にかかりました。少し待ってから再度お試しください。"
             elif "401" in error_msg or "Unauthorized" in error_type:
-                user_message = "Authentication failed. Please reconnect your account."
+                user_message = "認証に失敗しました。アカウントを再連携してください。"
             elif "403" in error_msg or "Forbidden" in error_type:
-                user_message = "Access denied. Please check your permissions."
+                user_message = "アクセスが拒否されました。パーミッションを確認してください。"
             else:
                 user_message = f"{error_type}: {error_msg}"
 
@@ -121,26 +119,26 @@ async def create_post(
             logger.error(full_error_msg, exc_info=True)
             return {"provider": provider, "status": "error", "message": user_message}
 
-    # Re-map tasks to include provider name for result tracking
+    # 結果追跡のためにプロバイダー名を含むようにタスクを再マッピング
     safe_tasks = []
     for i, (provider, _) in enumerate(targets):
         safe_tasks.append(safe_post(tasks[i], provider))
 
     post_results = await asyncio.gather(*safe_tasks)
 
-    # Check for errors
+    # エラーの確認
     errors = [r for r in post_results if r["status"] == "error"]
     successes = [r for r in post_results if r["status"] == "success"]
 
-    message = f"Posted to {len(successes)} accounts."
+    message = f"{len(successes)} 個のアカウントに投稿しました。"
     if errors:
-        message += f" Failed: {', '.join([e['provider'] for e in errors])}"
+        message += f" 失敗: {', '.join([e['provider'] for e in errors])}"
 
-    # Store message in session for flash message
+    # セッションにフラッシュメッセージを保存
     request.session["flash_message"] = message
     request.session["flash_type"] = "success" if not errors else "warning"
 
-    # Redirect to home page
+    # ホームページへリダイレクト
     from starlette.responses import RedirectResponse
 
     return RedirectResponse(url="/", status_code=303)
