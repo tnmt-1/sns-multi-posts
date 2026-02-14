@@ -1,12 +1,58 @@
 import io
 import logging
-import os
+import re
 from datetime import datetime
 from typing import Any
 
 import tweepy
 
+from app.config import settings
+from app.services.base import PostResult
+
 logger = logging.getLogger(__name__)
+
+
+class TwitterService:
+    PROVIDER_NAME = "twitter"
+    CHAR_LIMIT = 280  # 投稿内容によっては140の場合もあるが、一般的には280 (日本語は140)
+
+    def get_text_length(self, text: str) -> int:
+        """
+        Twitter の文字数計算（URL は 23 文字としてカウント）。
+        """
+        url_pattern = re.compile(r"https?://[^\s]+")
+        urls = url_pattern.findall(text)
+        base_len = len(url_pattern.sub("", text))
+        return base_len + (len(urls) * 23)
+
+    def get_character_limit(self) -> int:
+        return 140  # 日本語向けの制限
+
+    async def post(
+        self,
+        account: dict[str, Any],
+        text: str,
+        images: list[tuple[bytes, str]] | None = None,
+        **kwargs: Any,
+    ) -> PostResult:
+        try:
+            token = account.get("token")
+            if not token:
+                token = account  # 後方互換性のため
+
+            resp_data = await post_to_twitter(token, text, images)
+            post_id = str(resp_data.get("id"))
+            # Twitter の URL 形式: https://twitter.com/user/status/id
+            # ユーザー名が不明な場合は ID のみで生成、あるいは Twitter の仕様に合わせる
+            return PostResult(
+                success=True,
+                provider=self.PROVIDER_NAME,
+                post_id=post_id,
+                url=f"https://twitter.com/i/web/status/{post_id}",
+            )
+        except Exception as e:
+            logger.error(f"Twitter post failed: {e}")
+            return PostResult(success=False, provider=self.PROVIDER_NAME, error=str(e))
 
 
 def _log_rate_limit_info(response: Any, endpoint: str) -> None:
@@ -72,8 +118,8 @@ async def post_to_twitter(
     if not isinstance(token, dict):
         raise ValueError("Token must be a dictionary for OAuth 1.0a")
 
-    consumer_key = os.getenv("TWITTER_CLIENT_ID")
-    consumer_secret = os.getenv("TWITTER_CLIENT_SECRET")
+    consumer_key = settings.twitter_client_id
+    consumer_secret = settings.twitter_client_secret
     access_token = token.get("oauth_token")
     access_token_secret = token.get("oauth_token_secret")
 

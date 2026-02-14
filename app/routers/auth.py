@@ -1,5 +1,4 @@
 import logging
-import os
 import uuid
 from typing import cast
 
@@ -10,6 +9,8 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.templating import Jinja2Templates
 from starlette.responses import RedirectResponse, Response
 
+from app.config import settings
+
 # ロガーの設定
 logger = logging.getLogger(__name__)
 
@@ -18,11 +19,11 @@ templates = Jinja2Templates(directory="app/templates")
 
 oauth = OAuth()
 
-# Twitter (X) の設定 - 画像アップロードをサポートするため OAuth 1.0a に切り替えました
+# Twitter (X) の設定
 oauth.register(
     name="twitter",
-    client_id=os.getenv("TWITTER_CLIENT_ID"),
-    client_secret=os.getenv("TWITTER_CLIENT_SECRET"),
+    client_id=settings.twitter_client_id,
+    client_secret=settings.twitter_client_secret,
     request_token_url="https://api.twitter.com/oauth/request_token",
     request_token_params=None,
     access_token_url="https://api.twitter.com/oauth/access_token",

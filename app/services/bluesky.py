@@ -7,7 +7,47 @@ import httpx
 from atproto import Client, client_utils, models
 from PIL import Image
 
+from app.services.base import PostResult
+
 logger = logging.getLogger(__name__)
+
+
+class BlueskyService:
+    PROVIDER_NAME = "bluesky"
+    CHAR_LIMIT = 300
+
+    def get_text_length(self, text: str) -> int:
+        return len(text)
+
+    def get_character_limit(self) -> int:
+        return self.CHAR_LIMIT
+
+    async def post(
+        self,
+        account: dict[str, Any],
+        text: str,
+        images: list[tuple[bytes, str]] | None = None,
+        **kwargs: Any,
+    ) -> PostResult:
+        try:
+            resp = await post_to_bluesky(account, text, images)
+            # resp は models.ComAtprotoRepoCreateRecord.Response
+            uri = getattr(resp, "uri", "")
+            post_id = uri.split("/")[-1] if uri else None
+            # Bluesky の Web URL 形式: https://bsky.app/profile/{handle}/post/{post_id}
+            handle = account.get("handle", account.get("username", ""))
+            url = f"https://bsky.app/profile/{handle}/post/{post_id}" if handle and post_id else None
+
+            return PostResult(
+                success=True,
+                provider=self.PROVIDER_NAME,
+                post_id=post_id,
+                url=url,
+            )
+        except Exception as e:
+            logger.error(f"Bluesky post failed: {e}")
+            return PostResult(success=False, provider=self.PROVIDER_NAME, error=str(e))
+
 
 # リンク検出用のURLパターン
 URL_PATTERN = re.compile(r"https?://[^\s]+")

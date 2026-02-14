@@ -1,3 +1,4 @@
+import logging
 import os
 
 from fastapi import FastAPI, Request
@@ -6,28 +7,23 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.config import settings
 from app.routers import auth, post
 
-# 環境変数の検証
-REQUIRED_ENV_VARS = ["SECRET_KEY", "TWITTER_CLIENT_ID", "TWITTER_CLIENT_SECRET"]
-missing_vars = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
+# ロガーの設定
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-if missing_vars:
-    # 開発中は、本番環境（VERCEL=1）でなければデフォルトのSECRET_KEYを許可できますが、
-    # Twitterキーについては警告を出すか例外を発生させるべきです。
-    if "SECRET_KEY" in missing_vars and os.getenv("VERCEL") != "1":
-        print("Warning: SECRET_KEY is not set. Using a default key for development.")
-        missing_vars.remove("SECRET_KEY")
+# 起動時の検証
+if not settings.twitter_client_id or not settings.twitter_client_secret:
+    if settings.vercel:
+        raise RuntimeError("Twitter API credentials are required in production (VERCEL=1)")
+    else:
+        logger.warning("Twitter API credentials are not set. Twitter login will not work.")
 
-    if missing_vars:
-        raise RuntimeError(f"Missing required environment variables: {', '.join(missing_vars)}")
+app = FastAPI(title="SNS Multi-Post", debug=settings.debug)
 
-app = FastAPI(title="SNS Multi-Post")
-
-# セッション暗号化用のシークレットキー
-SECRET_KEY = os.getenv("SECRET_KEY", "dev_secret_key_change_me")
-
-app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
+app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)
 
 # ディレクトリが存在する場合のみ静的ファイルをマウント
 if os.path.exists("static"):
