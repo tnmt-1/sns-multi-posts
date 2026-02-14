@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
@@ -30,14 +31,12 @@ async def create_post(
     accounts_session = request.session.get("accounts", {})
 
     # Process images
-    images_data = []
-    image_bytes = []
+    images_data = []  # List of (content, content_type)
     if images:
         for img in images:
             if img.filename:
                 content = await img.read()
                 images_data.append((content, img.content_type or "image/jpeg"))
-                image_bytes.append(content)
 
     if len(images_data) > 4:
         return templates.TemplateResponse(
@@ -46,17 +45,37 @@ async def create_post(
 
     # Validate character limit
     # Limits: Twitter 280, Bluesky 300, Misskey 3000
-    # We use the minimum of selected platforms
-
     limits = {"twitter": 280, "bluesky": 300, "misskey": 3000}
 
-    min_limit = 3000
-    targets = []
+    def get_twitter_length(t: str) -> int:
+        url_pattern = re.compile(r"https?://[^\s]+")
+        urls = url_pattern.findall(t)
+        base_len = len(url_pattern.sub("", t))
+        return base_len + (len(urls) * 23)
 
+    targets = []
     for acc_str in selected_accounts:
         provider, acc_id = acc_str.split(":", 1)
-        if provider in limits:
-            min_limit = min(min_limit, limits[provider])
+
+        # Calculate specific count for this provider
+        if provider == "twitter":
+            current_count = get_twitter_length(text)
+        else:
+            current_count = len(text)
+
+        limit = limits.get(provider, 3000)
+        if current_count > limit:
+            error_msg = (
+                f"Text too long for {provider.capitalize()}. Limit is {limit} characters (Current: {current_count})."
+            )
+            return templates.TemplateResponse(
+                "index.html",
+                {
+                    "request": request,
+                    "error": error_msg,
+                    "accounts": accounts_session,
+                },
+            )
 
         # Find account data
         if provider in accounts_session:
@@ -65,16 +84,6 @@ async def create_post(
                     targets.append((provider, acc))
                     break
 
-    if len(text) > min_limit:
-        return templates.TemplateResponse(
-            "index.html",
-            {
-                "request": request,
-                "error": f"Text too long. Limit is {min_limit} characters.",
-                "accounts": accounts_session,
-            },
-        )
-
     # Dispatch posts
     tasks = []
 
@@ -82,9 +91,9 @@ async def create_post(
         if provider == "twitter":
             tasks.append(twitter.post_to_twitter(acc.get("token"), text, images_data))
         elif provider == "bluesky":
-            tasks.append(bluesky.post_to_bluesky(acc, text, image_bytes))
+            tasks.append(bluesky.post_to_bluesky(acc, text, images_data))
         elif provider == "misskey":
-            tasks.append(misskey.post_to_misskey(acc, text, image_bytes, visibility=misskey_visibility))
+            tasks.append(misskey.post_to_misskey(acc, text, images_data, visibility=misskey_visibility))
 
     # Run concurrently
     # We need to handle exceptions individually so one failure doesn't stop others

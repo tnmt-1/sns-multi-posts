@@ -325,6 +325,17 @@
             'misskey': 3000
         };
 
+        /**
+         * Twitter-specific character count (URLs are always 23 characters)
+         */
+        function getTwitterLength(text) {
+            const urlRegex = /https?:\/\/[^\s]+/g;
+            const urls = text.match(urlRegex) || [];
+            let length = text.replace(urlRegex, "").length;
+            length += urls.length * 23;
+            return length;
+        }
+
         function updateCharLimit() {
             const checkboxes = document.querySelectorAll('input[name="selected_accounts"]:checked');
             let minLimit = 3000;
@@ -342,7 +353,15 @@
 
         function updateCharCount() {
             const text = document.getElementById('postText').value;
-            const count = text.length;
+            const checkboxes = document.querySelectorAll('input[name="selected_accounts"]:checked');
+
+            let isTwitterSelected = false;
+            checkboxes.forEach(cb => {
+                if (cb.value.startsWith('twitter:')) isTwitterSelected = true;
+            });
+
+            // Use Twitter-weighted count if Twitter is selected, otherwise standard length
+            const count = isTwitterSelected ? getTwitterLength(text) : text.length;
             const limit = parseInt(document.getElementById('charLimit').innerText);
 
             const countEl = document.getElementById('charCount');

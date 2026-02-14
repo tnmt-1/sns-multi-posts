@@ -26,7 +26,7 @@ def _log_response_headers(headers: httpx.Headers, endpoint: str) -> None:
 async def post_to_misskey(
     account: dict[str, str],
     text: str,
-    images: list[bytes] | None = None,
+    images: list[tuple[bytes, str]] | None = None,
     visibility: str = "public",
 ) -> dict[str, Any]:
     """
@@ -35,7 +35,7 @@ async def post_to_misskey(
     Args:
         account: Account dict containing instance and token
         text: Post text content
-        images: Optional list of image bytes
+        images: Optional list of (image_bytes, mime_type) tuples
         visibility: Post visibility (public, home, followers, specified)
 
     Returns:
@@ -52,10 +52,10 @@ async def post_to_misskey(
     file_ids: list[str] = []
     if images:
         async with httpx.AsyncClient() as client:
-            for i, image in enumerate(images):
+            for i, (image_byte_data, _mime_type) in enumerate(images):
                 try:
                     # Upload to drive/files/create
-                    files = {"file": image}
+                    files = {"file": image_byte_data}
                     data = {"i": token}
                     # httpx handles multipart if files is passed
                     # But we also need 'i' (token) in the body.

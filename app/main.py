@@ -8,9 +8,23 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.routers import auth, post
 
+# Environment variable validation
+REQUIRED_ENV_VARS = ["SECRET_KEY", "TWITTER_CLIENT_ID", "TWITTER_CLIENT_SECRET"]
+missing_vars = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
+
+if missing_vars:
+    # During development, we can allow a default SECRET_KEY if not in production
+    # but for Twitter keys, we should probably warn or raise.
+    if "SECRET_KEY" in missing_vars and os.getenv("VERCEL") != "1":
+        print("Warning: SECRET_KEY is not set. Using a default key for development.")
+        missing_vars.remove("SECRET_KEY")
+
+    if missing_vars:
+        raise RuntimeError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
 app = FastAPI(title="SNS Multi-Post")
 
-# Secret key for session encryption. In production, use an env var.
+# Secret key for session encryption.
 SECRET_KEY = os.getenv("SECRET_KEY", "dev_secret_key_change_me")
 
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)

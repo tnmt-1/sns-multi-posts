@@ -34,10 +34,7 @@ def _log_rate_limit_info(response: Any, endpoint: str) -> None:
                 except (ValueError, TypeError):
                     reset_time = f", reset timestamp: {reset}"
 
-            logger.info(
-                f"Twitter API rate limit [{endpoint}]: "
-                f"{remaining}/{limit} requests remaining{reset_time}"
-            )
+            logger.info(f"Twitter API rate limit [{endpoint}]: {remaining}/{limit} requests remaining{reset_time}")
     except Exception as e:
         logger.debug(f"Failed to log rate limit info for {endpoint}: {e}")
 
@@ -95,15 +92,15 @@ async def post_to_twitter(
                 filename = _get_filename_from_mime_type(mime_type)
                 media = api.media_upload(filename=filename, file=file_obj)
                 media_ids.append(media.media_id_string)
-                logger.info(f"Uploaded image {i+1}/{len(images)} (media_id: {media.media_id_string})")
+                logger.info(f"Uploaded image {i + 1}/{len(images)} (media_id: {media.media_id_string})")
             except tweepy.TooManyRequests as e:
-                logger.error(f"Rate limit exceeded while uploading image {i+1}: {e}")
+                logger.error(f"Rate limit exceeded while uploading image {i + 1}: {e}")
                 # Try to extract rate limit info from exception
                 if hasattr(e, "response"):
                     _log_rate_limit_info(e.response, "media_upload")
                 raise
             except Exception as e:
-                logger.error(f"Failed to upload image {i+1}: {e}")
+                logger.error(f"Failed to upload image {i + 1}: {e}")
                 raise
 
     # Post tweet using v2 API

@@ -221,7 +221,9 @@ async def _create_embed_card(url: str, client: Client) -> models.AppBskyEmbedExt
         return None
 
 
-async def post_to_bluesky(account: dict[str, Any], text: str, images: list[bytes] | None = None) -> dict[str, Any]:
+async def post_to_bluesky(
+    account: dict[str, Any], text: str, images: list[tuple[bytes, str]] | None = None
+) -> dict[str, Any]:
     """
     Post to Bluesky with optional images.
 
@@ -231,7 +233,7 @@ async def post_to_bluesky(account: dict[str, Any], text: str, images: list[bytes
     Args:
         account: Account dict containing handle and password
         text: Post text content
-        images: Optional list of image bytes
+        images: Optional list of (image_bytes, mime_type) tuples
 
     Returns:
         Success status dict
@@ -255,9 +257,9 @@ async def post_to_bluesky(account: dict[str, Any], text: str, images: list[bytes
         # Upload images
         blob_refs = []
         if images:
-            for i, image in enumerate(images):
+            for i, (image_byte_data, _mime_type) in enumerate(images):
                 try:
-                    compressed_image = _compress_image(image)
+                    compressed_image = _compress_image(image_byte_data)
                     upload = client.upload_blob(compressed_image)
                     blob_refs.append(models.AppBskyEmbedImages.Image(alt="Image", image=upload.blob))
                     logger.info(f"Uploaded image {i + 1}/{len(images)} to Bluesky")
