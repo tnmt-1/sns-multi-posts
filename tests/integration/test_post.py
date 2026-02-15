@@ -46,7 +46,7 @@ def test_create_post_should_success_when_valid_input(client, mock_accounts):
                 "/post/",
                 data={
                     "text": "Hello World",
-                    "selected_accounts": ["twitter:tw123", "misskey:mk123"],
+                    "selected_accounts": ["twitter:tw123", "misskey:mk123@misskey.io"],
                     "misskey_visibility": "public",
                 },
                 follow_redirects=True,
