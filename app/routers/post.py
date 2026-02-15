@@ -1,3 +1,5 @@
+"""SNS への投稿操作に関連するエンドポイントを定義するルーター。"""
+
 import logging
 from typing import Annotated
 

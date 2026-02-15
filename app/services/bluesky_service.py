@@ -12,16 +12,34 @@ logger = logging.getLogger(__name__)
 
 
 class BlueskyService(BaseSNSProvider):
+    """Bluesky への投稿を管理するサービス。
+
+    atproto SDK を使用し、ID/パスワードによるセッション認証と
+    テキスト・画像投稿をサポートします。
+    """
+
     PROVIDER_NAME = "bluesky"
     CHAR_LIMIT = 300
 
     def get_text_length(self, text: str) -> int:
-        """
-        Bluesky の文字数計算（単純な文字数）。
+        """Bluesky の仕様に基づいた文字数を計算します。
+
+        現在の実装では単純な文字数を返します。
+
+        Args:
+            text (str): 計算対象のテキスト。
+
+        Returns:
+            int: 文字数。
         """
         return len(text)
 
     def get_character_limit(self) -> int:
+        """Bluesky の文字数制限を取得します。
+
+        Returns:
+            int: 最大文字数（300文字）。
+        """
         return self.CHAR_LIMIT
 
     async def post(
@@ -31,6 +49,17 @@ class BlueskyService(BaseSNSProvider):
         images: list[ImageData] | None = None,
         **kwargs: Any,
     ) -> PostResult:
+        """Bluesky に投稿します。
+
+        Args:
+            account (Mapping[str, Any]): 認証情報（BlueskyAccount）を含むアカウントデータ。
+            text (str): 投稿本文。
+            images (list[ImageData] | None): 添付する画像のリスト。
+            **kwargs (Any): 追加の引数（現状は未使用）。
+
+        Returns:
+            PostResult: 投稿結果。
+        """
         try:
             acc_model = BlueskyAccount.model_validate(account)
             resp = await self._post_internal(acc_model, text, images)
@@ -53,7 +82,16 @@ class BlueskyService(BaseSNSProvider):
         text: str,
         images: list[ImageData] | None = None,
     ) -> Any:
-        """Bluesky に投稿します（オプションで画像付き）。"""
+        """atproto API を呼び出して実際に投稿処理を行います。
+
+        Args:
+            account (BlueskyAccount): 認証済みのハンドルとパスワード。
+            text (str): 投稿本文。
+            images (list[ImageData] | None): アップロードする画像のリスト。
+
+        Returns:
+            Any: Bluesky API からのレスポンスオブジェクト。
+        """
         client = Client()
         client.login(account.handle, account.password)
 

@@ -14,20 +14,30 @@ logger = logging.getLogger(__name__)
 
 
 class PostService:
-    """投稿処理を統括するサービス。
+    """SNS への投稿処理を一括管理するサービス。
 
-    複数プラットフォームへの投稿フロー、バリデーション、並列実行を管理します。
+    複数プラットフォーム、複数アカウントへの同時投稿のオーケストレーション、
+    画像の前処理（圧縮）、およびバリデーションを担当します。
     """
 
     @staticmethod
     async def process_images(images: list[UploadFile] | None) -> list[ImageData]:
-        """UploadFileのリストをImageDataのリストに変換し、必要に応じて圧縮します。"""
+        """アップロードされたファイルを `ImageData` 形式に変換し、最適化を行います。
+
+        各 SNS プロバイダーの制限（主に 1MB 制限）に合わせて画像を自動的に圧縮します。
+
+        Args:
+            images (list[UploadFile] | None): FastAPI から受け取ったアップロードファイルのリスト。
+
+        Returns:
+            list[ImageData]: バイナリデータと MIME タイプを含むタプルのリスト。
+        """
         images_data: list[ImageData] = []
         if images:
             for img in images:
                 if img.filename:
                     content = await img.read()
-                    # 必要に応じて圧縮（1MB制限などを考慮）
+                    # SNS プロバイダーの共通的な制限に合わせて圧縮
                     compressed_content = compress_image(content)
                     images_data.append((compressed_content, img.content_type or "image/jpeg"))
         return images_data
@@ -39,16 +49,18 @@ class PostService:
         selected_account_ids: list[str],
         image_count: int = 0,
     ) -> str | None:
-        """各サービスの制限を検証します（文字数、画像枚数）。
+        """SNS プロバイダーごとの投稿制限を事前に検証します。
+
+        文字数制限や画像枚数の上限をチェックし、問題があればエラーメッセージを返します。
 
         Args:
-            manager (AccountManager): アカウント管理マネージャー。
-            text (str): 投稿する本文。
-            selected_account_ids (list[str]): 選択されたアカウントIDリスト。
-            image_count (int): 添付画像の枚数。
+            manager (AccountManager): アカウント情報を解決するためのマネージャー。
+            text (str): 投稿予定のテキスト。
+            selected_account_ids (list[str]): ユーザーが選択した投稿先 ID リスト。
+            image_count (int, optional): 添付画像の数。
 
         Returns:
-            str | None: 制限を超えている場合のエラーメッセージ。すべて正常なら None。
+            str | None: バリデーションエラーがある場合はその内容、問題なければ None。
         """
         if image_count > 4:
             return "最大4枚まで画像を添付できます"
@@ -75,17 +87,17 @@ class PostService:
         images_data: list[ImageData],
         **kwargs: Any,
     ) -> BulkPostResult:
-        """選択されたすべてのアカウントにメッセージを投稿します。
+        """指定されたすべてのアカウントに対して、並列で投稿を実行します。
 
         Args:
-            manager (AccountManager): アカウント管理マネージャー。
-            text (str): 投稿する本文。
-            selected_account_ids (list[str]): 投稿対象のアカウントIDリスト。
-            images_data (list[ImageData]): 投稿する画像のリスト。
-            **kwargs (Any): 追加の投稿オプション（例: visibility）。
+            manager (AccountManager): アカウント認証情報を取得するためのマネージャー。
+            text (str): 投稿するテキスト。
+            selected_account_ids (list[str]): 投稿先アカウント識別子のリスト。
+            images_data (list[ImageData]): 前処理済みの画像データのリスト。
+            **kwargs (Any): プロバイダー固有の追加オプション (例: `visibility`)。
 
         Returns:
-            BulkPostResult: 投稿結果。
+            BulkPostResult: 各アカウントへの投稿結果をまとめたオブジェクト。
         """
         targets_dict = manager.resolve_targets(selected_account_ids)
         tasks = []

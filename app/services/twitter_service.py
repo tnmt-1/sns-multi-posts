@@ -17,12 +17,26 @@ logger = logging.getLogger(__name__)
 
 
 class TwitterService(BaseSNSProvider):
+    """Twitter (X) への投稿を管理するサービス。
+
+    OAuth 1.0a 認証を使用し、メディアのアップロード（v1.1）と
+    ツイートの作成（v2）をサポートします。
+    """
+
     PROVIDER_NAME = "twitter"
     CHAR_LIMIT = 280  # 投稿内容によっては140の場合もあるが、一般的には280 (日本語は140)
 
     def get_text_length(self, text: str) -> int:
-        """
-        Twitter の文字数計算（URL は 23 文字としてカウント）。
+        """Twitter の仕様に基づいた文字数を計算します。
+
+        URL は一律 23 文字としてカウントされ、その他のテキストは
+        Python の標準的な文字数としてカウントされます。
+
+        Args:
+            text (str): 計算対象のテキスト。
+
+        Returns:
+            int: 計算された文字数。
         """
         url_pattern = re.compile(r"https?://[^\s]+")
         urls = url_pattern.findall(text)
@@ -30,6 +44,11 @@ class TwitterService(BaseSNSProvider):
         return base_len + (len(urls) * 23)
 
     def get_character_limit(self) -> int:
+        """Twitter の日本語向け文字数制限を取得します。
+
+        Returns:
+            int: 最大文字数（140文字）。
+        """
         return 140  # 日本語向けの制限
 
     async def post(
@@ -39,6 +58,17 @@ class TwitterService(BaseSNSProvider):
         images: list[ImageData] | None = None,
         **kwargs: Any,
     ) -> PostResult:
+        """Twitter にツイートを投稿します。
+
+        Args:
+            account (Mapping[str, Any]): 認証情報（TwitterToken）を含むアカウントデータ。
+            text (str): ツイート本文。
+            images (list[ImageData] | None): 添付する画像のリスト。
+            **kwargs (Any): 追加の引数（現状は未使用）。
+
+        Returns:
+            PostResult: 投稿結果。
+        """
         try:
             acc_model = TwitterAccount.model_validate(account)
             resp_data = await self._post_internal(acc_model.token, text, images)
@@ -55,7 +85,23 @@ class TwitterService(BaseSNSProvider):
     async def _post_internal(
         self, token: TwitterToken, text: str, images: list[ImageData] | None = None
     ) -> dict[str, str | int]:
-        """OAuth 1.0a 認証を使用して、画像付きのツイートを投稿します（オプション）。"""
+        """Twitter API を呼び出して実際に投稿処理を行います。
+
+        1. 画像がある場合は v1.1 API を使用してメディアをアップロードします。
+        2. v2 API を使用して、テキスト（およびメディアID）と共にツイートを作成します。
+
+        Args:
+            token (TwitterToken): OAuth 1.0a 認証情報。
+            text (str): ツイート本文。
+            images (list[ImageData] | None): アップロードする画像のリスト。
+
+        Returns:
+            dict[str, str | int]: Twitter API からのレスポンス（ツイートID等を含む）。
+
+        Raises:
+            ValueError: 認証情報が不足している場合。
+            tweepy.TweepyException: API 呼び出し中にエラーが発生した場合。
+        """
         if images is None:
             images = []
 
@@ -113,7 +159,12 @@ class TwitterService(BaseSNSProvider):
             raise
 
     def _log_rate_limit_info(self, response: httpx.Response | object, endpoint: str) -> None:
-        """Twitter API のレスポンスヘッダーからレート制限情報をログに記録します。"""
+        """レスポンスヘッダーからレート制限情報を抽出し、ログに記録します。
+
+        Args:
+            response (httpx.Response | object): API レスポンスオブジェクト。
+            endpoint (str): 対象のエンドポイント名（ログ出力用）。
+        """
         try:
             headers: Mapping[str, Any] = {}
             if isinstance(response, httpx.Response):
@@ -143,7 +194,14 @@ class TwitterService(BaseSNSProvider):
             logger.debug(f"Failed to log rate limit info for {endpoint}: {e}")
 
     def _get_filename_from_mime_type(self, mime_type: str) -> str:
-        """MIME タイプに基づいて適切なファイル名を取得します。"""
+        """MIME タイプからファイルシステム上の拡張子を推測してファイル名を生成します。
+
+        Args:
+            mime_type (str): 画像の MIME タイプ。
+
+        Returns:
+            str: 生成されたファイル名（image.jpg, image.png, image.gif 等）。
+        """
         if "png" in mime_type:
             return "image.png"
         elif "gif" in mime_type:

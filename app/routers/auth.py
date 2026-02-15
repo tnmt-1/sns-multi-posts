@@ -1,3 +1,5 @@
+"""各 SNS プロバイダーとの連携（OAuth, MiAuth, 独自ログイン）を管理するエンドポイント。"""
+
 import logging
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request

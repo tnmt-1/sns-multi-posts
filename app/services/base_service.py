@@ -5,23 +5,25 @@ from app.schemas.post import ImageData, PostResult
 
 @runtime_checkable
 class BaseSNSProvider(Protocol):
-    """SNSプロバイダーの基本インターフェース。
+    """SNSプロバイダーが実装すべき共通のインターフェース。
 
-    すべてのSNSプロバイダーはこのプロトコルに従い、共通の投稿メソッドを実装する必要があります。
+    `runtime_checkable` デコレータにより、実行時に `isinstance` を用いた
+    型チェックが可能になっています。各 SNS プロバイダーはこのプロトコルを
+    実装することで、`PostService` から統一的に扱われます。
     """
 
     async def post(
         self, text: str, images: list[ImageData] | None = None, account_data: dict[str, Any] | None = None
     ) -> PostResult:
-        """SNSに投稿します。
+        """SNS への一括投稿処理を定義します。
 
         Args:
-            text (str): 投稿する本文。
-            images (list[ImageData] | None): 投稿する画像のリスト。
-            account_data (dict[str, Any] | None): 投稿に使用するアカウントの認証情報。
+            text (str): 投稿するテキスト。
+            images (list[ImageData] | None): 投稿する画像のバイナリデータとメタデータのリスト。
+            account_data (dict[str, Any] | None): セッションから取得した、
+                プロバイダー固有のアカウント認証情報 (トークン、パスワード等)。
 
         Returns:
-            PostResult: 投稿結果。
-         PostResult.success が True なら成功、False なら失敗。
+            PostResult: 投稿の成否と、失敗時のエラーメッセージを含むオブジェクト。
         """
         ...

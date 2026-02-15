@@ -33,12 +33,26 @@ oauth.register(
 
 
 class AuthService:
+    """ユーザー認証とSNSアカウント連携を管理するサービス。
+
+    Twitter (OAuth 1.0a), Bluesky (ID/PW), Misskey (MiAuth) の
+    認証フローの実装をカプセル化します。
+    """
+
     @staticmethod
     async def get_login_redirect(request: Request, provider: str, redirect_uri: str) -> Response | None:
         """指定されたプロバイダーのログインリダイレクトレスポンスを返します。
 
-        Twitterの場合は OAuth のリダイレクトレスポンスを返します。
-        Bluesky/Misskey の場合は None を返し、ルーター側でログイン画面を表示させます。
+        Twitter の場合は oauth_token 取得後のリダイレクトレスポンスを返します。
+        Bluesky/Misskey の場合は独自ログイン画面が必要なため None を返します。
+
+        Args:
+            request (Request): FastAPI リクエスト。
+            provider (str): プロバイダー名 ('twitter', 'bluesky', 'misskey')。
+            redirect_uri (str): 認証後の戻り先 URL。
+
+        Returns:
+            Response | None: リダイレクトが必要な場合は Response、不要な場合は None。
         """
         if provider == "twitter":
             return cast(Response, await oauth.twitter.authorize_redirect(request, redirect_uri))
@@ -46,7 +60,15 @@ class AuthService:
 
     @staticmethod
     async def handle_twitter_callback(request: Request, manager: AccountManager) -> None:
-        """Twitter の認証コールバックを処理し、アカウント情報を保存します。"""
+        """Twitter の認証コールバックを処理し、アカウント情報を保存します。
+
+        Args:
+            request (Request): FastAPI リクエスト。
+            manager (AccountManager): アカウント管理マネージャー。
+
+        Raises:
+            HTTPException: ユーザー情報の取得に失敗した場合。
+        """
         token = await oauth.twitter.authorize_access_token(request)
         resp = await oauth.twitter.get("account/verify_credentials.json", token=token)
         if resp.status_code != 200:
@@ -58,7 +80,13 @@ class AuthService:
 
     @staticmethod
     async def login_bluesky(manager: AccountManager, handle: str, password: str) -> None:
-        """Blueskyにログインし、アカウント情報を保存します。"""
+        """Bluesky にログインし、アカウント情報をセッションに保存します。
+
+        Args:
+            manager (AccountManager): アカウント管理マネージャー。
+            handle (str): ハンドル名（例: user.bsky.social）。
+            password (str): アプリパスワード。
+        """
         client = Client()
         profile = client.login(handle, password)
 
@@ -74,7 +102,16 @@ class AuthService:
 
     @staticmethod
     def prepare_misskey_login(session: dict[str, Any], instance: str, callback_url: str) -> str:
-        """Misskeyの認証URLを生成し、セッションに保留情報を保存します。"""
+        """Misskey の MiAuth 認証 URL を生成し、セッションに保留情報を保存します。
+
+        Args:
+            session (dict[str, Any]): FastAPI/Starlette セッション辞書。
+            instance (str): インスタンスのホスト名。
+            callback_url (str): 認証後の戻り先 URL。
+
+        Returns:
+            str: Misskey インスタンスの MiAuth 開始 URL。
+        """
         session_id = str(uuid.uuid4())
         instance = instance.replace("https://", "").replace("http://", "").strip("/")
 
@@ -90,7 +127,15 @@ class AuthService:
 
     @staticmethod
     async def callback_misskey(manager: AccountManager, session: dict[str, Any]) -> None:
-        """Misskeyの認証コールバックを処理します。"""
+        """Misskey の認証コールバックを処理し、アクセストークンを取得して保存します。
+
+        Args:
+            manager (AccountManager): アカウント管理マネージャー。
+            session (dict[str, Any]): FastAPI/Starlette セッション辞書。
+
+        Raises:
+            HTTPException: 保留中の認証情報がない場合、またはトークン取得に失敗した場合。
+        """
         pending = session.get("misskey_pending")
         if not pending:
             raise HTTPException(status_code=400, detail="No pending Misskey login")

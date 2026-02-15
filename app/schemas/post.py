@@ -2,14 +2,14 @@ from pydantic import BaseModel
 
 
 class PostResult(BaseModel):
-    """SNSへの投稿結果を保持するモデル。
+    """個別の SNS アカウントへの投稿結果を保持するモデル。
 
     Attributes:
-        success (bool): 投稿が成功したかどうか。
-        provider (str): 投稿先のプロバイダー名（twitter, bluesky, misskeyなど）。
-        post_id (str | None): SNS側で発行された投稿ID。
-        url (str | None): 投稿された内容のURL。
-        error (str | None): 失敗時のエラーメッセージ。
+        success (bool): 投稿が成功したかどうか。成功なら True。
+        provider (str): 投稿先のプロバイダー名 ('twitter', 'bluesky', 'misskey')。
+        post_id (str | None): SNS 側で発行された投稿の一意な ID。
+        url (str | None): 投稿されたコンテンツへの直接リンク URL。
+        error (str | None): 失敗時に API から返された、または例外メッセージ。
     """
 
     success: bool
@@ -20,10 +20,13 @@ class PostResult(BaseModel):
 
     @property
     def translated_error(self) -> str:
-        """エラー内容をユーザーフレンドリーな日本語に翻訳します。
+        """API エラーメッセージをユーザー向けの日本語に翻訳・要約します。
+
+        主に HTTP ステータスコードや頻出のエラーフレーズに基づいて
+        わかりやすいメッセージを生成します。
 
         Returns:
-            str: 翻訳されたエラーメッセージ。
+            str: 翻訳または整形された日本語のエラーメッセージ。
         """
         if self.success:
             return ""
@@ -42,10 +45,10 @@ class PostResult(BaseModel):
 
 
 class BulkPostResult(BaseModel):
-    """複数アカウントへの投稿結果をまとめるモデル。
+    """一括投稿リクエストの最終的な集計結果を保持するモデル。
 
     Attributes:
-        results (list[PostResult]): 各アカウントへの投稿結果のリスト。
+        results (list[PostResult]): 送信を試みた各アカウントごとの結果リスト。
     """
 
     results: list[PostResult]

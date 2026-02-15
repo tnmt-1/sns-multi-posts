@@ -28,26 +28,58 @@ def migrate_accounts_session(accounts: dict[str, Any]) -> dict[str, Any]:
 
 
 class AccountManager:
-    """セッション上のアカウント情報を一元管理するマネージャー。"""
+    """セッション上のアカウント情報を一元管理するマネージャー。
+
+    FastAPI のセッション (Starlette Session) 内に保存された SNS アカウント情報を
+    CRUD 操作し、整合性を保つ役割を担います。
+    """
 
     def __init__(self, session: MutableMapping[str, Any]) -> None:
+        """アカウントマネージャーを初期化します。
+
+        セッションからアカウントデータを読み込み、必要に応じてデータ移行を行います。
+
+        Args:
+            session (MutableMapping[str, Any]): FastAPI/Starlette のセッションオブジェクト。
+        """
         self._session = session
         data = session.get("accounts", {})
         self._accounts: dict[str, list[dict[str, Any]]] = migrate_accounts_session(data)
 
     @property
     def accounts(self) -> AccountsDict:
+        """現在管理されている全アカウント情報を取得します。
+
+        Returns:
+            AccountsDict: プロバイダー名をキー、アカウント情報のリストを値とする辞書。
+        """
         return self._accounts  # type: ignore
 
     def save(self) -> None:
+        """現在のメモリ上のアカウント情報をセッションに永続化します。"""
         self._session["accounts"] = self._accounts
 
     def find(self, provider: str, account_id: str | int) -> dict[str, Any] | None:
+        """指定されたプロバイダーと ID に一致するアカウントを探します。
+
+        Args:
+            provider (str): プロバイダー名 ('twitter', 'bluesky', 'misskey')。
+            account_id (str | int): アカウントの一意識別子。
+
+        Returns:
+            dict[str, Any] | None: 見つかった場合はアカウント情報の辞書、そうでない場合は None。
+        """
         provider_list = self._accounts.get(provider, [])
         target_id_str = str(account_id)
         return next((acc for acc in provider_list if str(acc.get("id")) == target_id_str), None)
 
     def upsert(self, provider: str, account_model: AccountBase) -> None:
+        """アカウント情報を新規登録または更新します。
+
+        Args:
+            provider (str): プロバイダー名。
+            account_model (AccountBase): 更新するアカウントデータモデル。
+        """
         if provider not in self._accounts:
             self._accounts[provider] = []
 
@@ -63,6 +95,12 @@ class AccountManager:
             self._accounts[provider].append(account_data)
 
     def remove(self, provider: str, account_id: str | int) -> None:
+        """指定されたアカウントを削除します。
+
+        Args:
+            provider (str): プロバイダー名。
+            account_id (str | int): 削除するアカウントの ID。
+        """
         if provider not in self._accounts:
             return
 
@@ -70,6 +108,14 @@ class AccountManager:
         self._accounts[provider] = [acc for acc in self._accounts[provider] if str(acc.get("id")) != target_id_str]
 
     def resolve_targets(self, target_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
+        """`provider:id` 形式の識別子のリストから、実際のアカウントデータの辞書を作成します。
+
+        Args:
+            target_ids (list[str]): `twitter:123` のような形式の文字列リスト。
+
+        Returns:
+            dict[str, list[dict[str, Any]]]: プロバイダーごとのアカウントリスト。
+        """
         targets: dict[str, list[dict[str, Any]]] = {
             "twitter": [],
             "bluesky": [],
@@ -89,4 +135,14 @@ class AccountManager:
 
 
 def get_account_manager(request: Request) -> AccountManager:
+    """FastAPI の依存注入 (DI) 用のヘルパー。
+
+    リクエストから AccountManager インスタンスを作成して返します。
+
+    Args:
+        request (Request): FastAPI リクエスト。
+
+    Returns:
+        AccountManager: 初期化済みのマネージャー。
+    """
     return AccountManager(request.session)

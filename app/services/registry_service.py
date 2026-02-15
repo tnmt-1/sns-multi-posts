@@ -17,5 +17,13 @@ _services: dict[str, BaseSNSProvider] = {
 
 
 def get_service(provider: str) -> BaseSNSProvider | None:
-    """プロバイダー名に対応するサービスインスタンスを返します。"""
+    """指定されたプロバイダー名に対応するサービスインスタンスを取得します。
+
+    Args:
+        provider (str): プロバイダー名 ('twitter', 'bluesky', 'misskey')。
+
+    Returns:
+        BaseSNSProvider | None: プロバイダーが登録されている場合はそのインスタンス、
+            存在しない場合は None。
+    """
     return _services.get(provider)

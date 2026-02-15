@@ -12,13 +12,31 @@ logger = logging.getLogger(__name__)
 
 
 class MisskeyService(BaseSNSProvider):
+    """Misskey への投稿を管理するサービス。
+
+    Misskey API を直接呼び出し、画像アップロードとノートの作成をサポートします。
+    """
+
     PROVIDER_NAME = "misskey"
     CHAR_LIMIT = 3000
 
     def get_text_length(self, text: str) -> int:
+        """Misskey の仕様に基づいた文字数を計算します。
+
+        Args:
+            text (str): 計算対象のテキスト。
+
+        Returns:
+            int: 文字数。
+        """
         return len(text)
 
     def get_character_limit(self) -> int:
+        """Misskey の文字数制限を取得します。
+
+        Returns:
+            int: 最大文字数（3000文字）。
+        """
         return self.CHAR_LIMIT
 
     async def post(
@@ -28,6 +46,17 @@ class MisskeyService(BaseSNSProvider):
         images: list[ImageData] | None = None,
         **kwargs: Any,
     ) -> PostResult:
+        """Misskey にノートを投稿します。
+
+        Args:
+            account (Mapping[str, Any]): 認証情報（MisskeyAccount）を含むアカウントデータ。
+            text (str): ノート本文。
+            images (list[ImageData] | None): 添付する画像のリスト。
+            **kwargs (Any): 追加の引数（visibility: 公開範囲など）。
+
+        Returns:
+            PostResult: 投稿結果。
+        """
         try:
             acc_model = MisskeyAccount.model_validate(account)
             visibility = str(kwargs.get("visibility", "public"))
@@ -49,7 +78,20 @@ class MisskeyService(BaseSNSProvider):
         images: list[ImageData] | None = None,
         visibility: str = "public",
     ) -> dict[str, Any]:
-        """Misskey に投稿します（オプションで画像付き）。"""
+        """Misskey API を呼び出して実際に投稿処理を行政します。
+
+        1. 画像がある場合は /api/drive/files/create でアップロードします。
+        2. /api/notes/create でノートを作成します。
+
+        Args:
+            account (MisskeyAccount): 認証済みのインスタンス名とトークン。
+            text (str): ノート本文。
+            images (list[ImageData] | None): アップロードする画像のリスト。
+            visibility (str): 公開範囲。
+
+        Returns:
+            dict[str, Any]: Misskey API からのレスポンス。
+        """
         if images is None:
             images = []
         instance = account.instance
@@ -95,7 +137,12 @@ class MisskeyService(BaseSNSProvider):
             return resp.json()
 
     def _log_response_headers(self, headers: httpx.Headers, endpoint: str) -> None:
-        """可能であればレート制限情報を含むレスポンスヘッダーをログに記録します。"""
+        """レスポンスヘッダーからレート制限情報を抽出し、ログに記録します。
+
+        Args:
+            headers (httpx.Headers): API レスポンスヘッダー。
+            endpoint (str): 対象のエンドポイント名（ログ出力用）。
+        """
         rate_limit_headers = {
             "x-ratelimit-limit": headers.get("x-ratelimit-limit"),
             "x-ratelimit-remaining": headers.get("x-ratelimit-remaining"),
