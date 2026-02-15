@@ -1,6 +1,5 @@
 import logging
 import os
-from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
@@ -10,7 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
 from app.routers import auth, post
-from app.services.base import migrate_accounts_session
+from app.services.base import AccountManager
 
 # ロガーの設定
 logging.basicConfig(level=logging.INFO)
@@ -40,18 +39,14 @@ app.include_router(post.router)
 
 @app.get("/")
 async def read_root(request: Request) -> Response:
-    accounts: dict[str, Any] = request.session.get("accounts", {})
-
-    # 旧形式のセッションデータを移行
-    accounts = migrate_accounts_session(accounts)
-    if accounts:
-        request.session["accounts"] = accounts
+    manager = AccountManager(request.session)
+    manager.save()  # 移行されたデータを永続化
 
     # セッションからフラッシュメッセージを取得
     flash_message = request.session.pop("flash_message", None)
     flash_type = request.session.pop("flash_type", None)
 
-    context = {"request": request, "accounts": accounts}
+    context = {"request": request, "accounts": manager.accounts}
 
     if flash_message:
         if flash_type == "success":

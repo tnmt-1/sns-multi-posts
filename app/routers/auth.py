@@ -1,6 +1,5 @@
 import logging
 import uuid
-from typing import Any
 
 import httpx
 from atproto import Client
@@ -10,7 +9,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.responses import RedirectResponse, Response
 
 from app.config import settings
-from app.services.base import BlueskyAccount, MisskeyAccount, TwitterAccount, migrate_accounts_session
+from app.services.base import AccountManager, BlueskyAccount, MisskeyAccount, TwitterAccount
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
@@ -38,6 +37,15 @@ oauth.register(
 
 @router.get("/login/{provider}")
 async def login(request: Request, provider: str) -> Response:
+    """指定されたSNSプロバイダーのログイン処理を開始します。
+
+    Args:
+        request (Request): FastAPIリクエスト。
+        provider (str): プロバイダー名 ('twitter', 'bluesky', 'misskey')。
+
+    Returns:
+        Response: リダイレクト、またはログイン画面のレスポンス。
+    """
     redirect_uri = request.url_for("auth_callback", provider=provider)
     if provider == "twitter":
         # authorize_redirect は実際には Starlette Response を返すが、
@@ -53,14 +61,19 @@ async def login(request: Request, provider: str) -> Response:
 
 @router.post("/login/bluesky")
 async def login_bluesky(request: Request, handle: str = Form(...), password: str = Form(...)) -> Response:
+    """BlueskyのID/パスワード認証を行い、アカウントをセッションに登録します。
+
+    Args:
+        request (Request): FastAPIリクエスト。
+        handle (str): Blueskyのハンドル名。
+        password (str): アプリパスワード。
+
+    Returns:
+        Response: ホームへのリダイレクト、またはエラー時のログイン画面。
+    """
     try:
         client = Client()
         profile = client.login(handle, password)
-
-        # セッションにアカウント情報を保存
-        accounts: dict[str, Any] = request.session.get("accounts", {})
-        if "bluesky" not in accounts:
-            accounts["bluesky"] = []
 
         # Pydantic モデルを使用してデータを検証
         account_model = BlueskyAccount(
@@ -71,14 +84,11 @@ async def login_bluesky(request: Request, handle: str = Form(...), password: str
             password=password,
         )
 
-        # 既存のアカウントがあれば更新、なければ追加
-        existing_index = next((i for i, acc in enumerate(accounts["bluesky"]) if acc["id"] == account_model.id), None)
-        if existing_index is not None:
-            accounts["bluesky"][existing_index] = account_model.model_dump()
-        else:
-            accounts["bluesky"].append(account_model.model_dump())
+        # AccountManager を使用してアカウントを保存
+        manager = AccountManager(request.session)
+        manager.upsert("bluesky", account_model)
+        manager.save()
 
-        request.session["accounts"] = accounts
         return RedirectResponse(url="/", status_code=303)
     except Exception as e:
         return templates.TemplateResponse("auth/bluesky_login.html", {"request": request, "error": str(e)})
@@ -86,6 +96,15 @@ async def login_bluesky(request: Request, handle: str = Form(...), password: str
 
 @router.post("/login/misskey")
 async def login_misskey(request: Request, instance: str = Form(...)) -> Response:
+    """MisskeyのMiAuthを開始するためのリダイレクトを行います。
+
+    Args:
+        request (Request): FastAPIリクエスト。
+        instance (str): Misskeyインスタンスのホスト名。
+
+    Returns:
+        Response: Misskey認証URLへのリダイレクト。
+    """
     session_id = str(uuid.uuid4())
     # インスタンスURLをクリーンアップ
     instance = instance.replace("https://", "").replace("http://", "").strip("/")
@@ -95,7 +114,10 @@ async def login_misskey(request: Request, instance: str = Form(...)) -> Response
     # MiAuthはコールバックURLでカスタムステートを簡単に返さないため、session_id をキーとして使用します。
 
     # 認証待ち情報を保存
-    request.session["misskey_pending"] = {"session_id": session_id, "instance": instance}
+    request.session["misskey_pending"] = {
+        "session_id": session_id,
+        "instance": instance,
+    }
 
     # 画像アップロードでドライブにファイルを書き込む必要があるため、
     # MiAuth で drive の書き込み権限も要求する
@@ -109,8 +131,17 @@ async def login_misskey(request: Request, instance: str = Form(...)) -> Response
 
 @router.get("/callback/{provider}")
 async def auth_callback(request: Request, provider: str, session: str | None = None) -> RedirectResponse:
-    accounts: dict[str, Any] = request.session.get("accounts", {})
-    accounts = migrate_accounts_session(accounts)
+    """各SNSプロバイダーからの認証コールバックを処理します。
+
+    Args:
+        request (Request): FastAPIリクエスト。
+        provider (str): プロバイダー名。
+        session (str | None): MisskeyのセッションID（URLクエリパラメータとして渡される場合）。
+
+    Returns:
+        RedirectResponse: ホームへのリダイレクト。
+    """
+    manager = AccountManager(request.session)
 
     if provider == "twitter":
         token = await oauth.twitter.authorize_access_token(request)
@@ -123,9 +154,6 @@ async def auth_callback(request: Request, provider: str, session: str | None = N
 
         user_data = resp.json()
 
-        if "twitter" not in accounts:
-            accounts["twitter"] = []
-
         # Pydantic モデルを使用してデータを検証
         account_model = TwitterAccount(
             id=user_data.get("id_str"),
@@ -134,11 +162,8 @@ async def auth_callback(request: Request, provider: str, session: str | None = N
             token=token,
         )
 
-        # 重複を避ける（IDで判定）
-        if not any(acc["id"] == account_model.id for acc in accounts["twitter"]):
-            accounts["twitter"].append(account_model.model_dump())
-
-        request.session["accounts"] = accounts
+        manager.upsert("twitter", account_model)
+        manager.save()
 
     elif provider == "misskey":
         pending = request.session.get("misskey_pending")
@@ -152,63 +177,48 @@ async def auth_callback(request: Request, provider: str, session: str | None = N
         async with httpx.AsyncClient() as client:
             resp = await client.post(f"https://{instance}/api/miauth/{session_id}/check")
             if resp.status_code != 200:
-                raise HTTPException(status_code=400, detail="Misskey auth failed")
+                logger.error(f"Misskey check failed: {resp.status_code} - {resp.text}")
+                raise HTTPException(status_code=400, detail="Misskey authentication failed")
 
-            data = resp.json()
-            if not data.get("ok"):
-                raise HTTPException(status_code=400, detail="Misskey auth failed")
+            auth_info = resp.json()
+            if not auth_info.get("ok"):
+                raise HTTPException(status_code=401, detail="Misskey authentication rejected")
 
-            token = data.get("token")
-            user = data.get("user", {})
-
-            if "misskey" not in accounts:
-                accounts["misskey"] = []
+            user = auth_info["user"]
+            token = auth_info["token"]
 
             # Pydantic モデルを使用してデータを検証
-            # ID はインスタンス内でしか一意でない可能性があるため、インスタンス名を付与して識別子とする
-            account_id = f"{user.get('id')}@{instance}"
             account_model = MisskeyAccount(
-                id=account_id,
-                username=user.get("username"),
-                name=user.get("name"),
+                # ID を id@instance 形式にして重複を避ける
+                id=f"{user['id']}@{instance}",
+                username=user["username"],
+                name=user["name"] or user["username"],
                 instance=instance,
                 token=token,
             )
 
-            # 既存のアカウントがあれば更新、なければ追加
-            existing_index = next((i for i, acc in enumerate(accounts["misskey"]) if acc["id"] == account_id), None)
-            if existing_index is not None:
-                accounts["misskey"][existing_index] = account_model.model_dump()
-            else:
-                accounts["misskey"].append(account_model.model_dump())
+            manager.upsert("misskey", account_model)
+            manager.save()
 
-            request.session["accounts"] = accounts
-            request.session.pop("misskey_pending", None)
+        # 一時的なセッション情報を削除
+        request.session.pop("misskey_pending", None)
 
-    return RedirectResponse(url="/")
+    return RedirectResponse(url="/", status_code=303)
 
 
 @router.get("/disconnect/{provider}/{account_id}")
-async def disconnect(request: Request, provider: str, account_id: str) -> RedirectResponse:
-    accounts = request.session.get("accounts", {})
-    accounts = migrate_accounts_session(accounts)
-    if provider in accounts:
-        # 一致するIDのアカウントを除外
-        accounts[provider] = [acc for acc in accounts.get(provider, []) if str(acc.get("id")) != account_id]
+async def disconnect(request: Request, provider: str, account_id: str) -> Response:
+    """指定されたアカウントの連携を解除（セッションから削除）します。
 
-        # このプロバイダーのAccountがなくなった場合、キーを削除
-        if not accounts.get(provider):
-            accounts.pop(provider, None)
+    Args:
+        request (Request): FastAPIリクエスト。
+        provider (str): プロバイダー名。
+        account_id (str): 削除するアカウントID。
 
-        if not accounts:
-            request.session.pop("accounts", None)
-        else:
-            request.session["accounts"] = accounts
-
-    return RedirectResponse(url="/")
-
-
-@router.get("/logout")
-async def logout(request: Request) -> RedirectResponse:
-    request.session.pop("accounts", None)
-    return RedirectResponse(url="/")
+    Returns:
+        Response: ホームへのリダイレクト。
+    """
+    manager = AccountManager(request.session)
+    manager.remove(provider, account_id)
+    manager.save()
+    return RedirectResponse(url="/", status_code=303)
