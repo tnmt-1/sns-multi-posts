@@ -1,12 +1,11 @@
-import asyncio
 import logging
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from app.services import get_service
+from app.services import PostService
 from app.services.base import AccountManager, ImageData
 
 router = APIRouter(prefix="/post", tags=["post"])
@@ -14,6 +13,24 @@ templates = Jinja2Templates(directory="app/templates")
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
+
+
+async def _process_images(images: list[UploadFile] | None) -> list[ImageData]:
+    """UploadFileのリストをImageDataのリストに変換します。
+
+    Args:
+        images (list[UploadFile] | None): FastAPIから受け取ったファイルのリスト。
+
+    Returns:
+        list[ImageData]: サービス層で扱える画像データのリスト。
+    """
+    images_data: list[ImageData] = []
+    if images:
+        for img in images:
+            if img.filename:
+                content = await img.read()
+                images_data.append((content, img.content_type or "image/jpeg"))
+    return images_data
 
 
 @router.post("/")
@@ -39,12 +56,7 @@ async def create_post(
     manager = AccountManager(request.session)
 
     # 画像の処理
-    images_data: list[ImageData] = []
-    if images:
-        for img in images:
-            if img.filename:
-                content = await img.read()
-                images_data.append((content, img.content_type or "image/jpeg"))
+    images_data = await _process_images(images)
 
     if len(images_data) > 4:
         return templates.TemplateResponse(
@@ -56,50 +68,38 @@ async def create_post(
             },
         )
 
-    # 投稿対象の解決と検証
-    tasks = []
-    targets_dict = manager.resolve_targets(selected_accounts)
+    # バリデーション
+    error_msg = PostService.validate_limits(manager, text, selected_accounts)
+    if error_msg:
+        return templates.TemplateResponse(
+            "index.html",
+            {
+                "request": request,
+                "error": error_msg,
+                "accounts": manager.accounts,
+            },
+        )
 
-    for provider, accounts in targets_dict.items():
-        service = get_service(provider)
-        if not service:
-            continue
+    # 投稿実行
+    result = await PostService.post_to_all(
+        manager,
+        text,
+        selected_accounts,
+        images_data,
+        visibility=misskey_visibility,
+    )
 
-        for target_acc in accounts:
-            # 文字数制限の検証
-            current_count = service.get_text_length(text)
-            limit = service.get_character_limit()
-            if current_count > limit:
-                error_msg = f"{provider.capitalize()} の文字数制限を超えています。制限は {limit} 文字です（現在: {current_count} 文字）。"
-                return templates.TemplateResponse(
-                    "index.html",
-                    {
-                        "request": request,
-                        "error": error_msg,
-                        "accounts": manager.accounts,
-                    },
-                )
-
-            kwargs: dict[str, Any] = {"visibility": misskey_visibility} if provider == "misskey" else {}
-            tasks.append(service.post(target_acc, text, images_data, **kwargs))
-
-    # 投稿を配信
-    if not tasks:
+    if result.total_count == 0:
         request.session["flash_message"] = "送信先のアカウントが選択されていません。"
         request.session["flash_type"] = "error"
         return RedirectResponse(url="/", status_code=303)
 
-    results = await asyncio.gather(*tasks)
-
-    # 結果の集計
-    success_count = sum(1 for res in results if res.success)
-    errors = [f"{res.provider}: {res.translated_error}" for res in results if not res.success]
-
-    message = f"{success_count} 個のアカウントに投稿しました。"
-    if errors:
-        message += " 失敗: " + ", ".join(errors)
+    # 結果の構築
+    message = f"{result.success_count} 個のアカウントに投稿しました。"
+    if result.has_errors:
+        message += " 失敗: " + ", ".join(result.error_messages)
 
     request.session["flash_message"] = message
-    request.session["flash_type"] = "success" if not errors else "warning"
+    request.session["flash_type"] = "success" if not result.has_errors else "warning"
 
     return RedirectResponse(url="/", status_code=303)
