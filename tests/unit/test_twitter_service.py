@@ -1,4 +1,4 @@
-from app.services.twitter import TwitterService
+from app.services.twitter_service import TwitterService
 
 
 def test_twitter_service_text_length_with_url():

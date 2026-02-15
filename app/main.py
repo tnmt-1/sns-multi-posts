@@ -9,7 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
 from app.routers import auth, post
-from app.services.base import AccountManager, get_account_manager
+from app.services.account_service import AccountManager, get_account_manager
 
 # ロガーの設定
 logging.basicConfig(level=logging.INFO)

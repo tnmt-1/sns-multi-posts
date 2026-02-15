@@ -3,46 +3,14 @@ import logging
 from typing import Any
 
 from fastapi import UploadFile
-from pydantic import BaseModel
 
-from .base import AccountManager, ImageData, PostResult
-from .registry import get_service
+from app.schemas.post import BulkPostResult, ImageData
+from app.utils.image_utils import compress_image
+
+from .account_service import AccountManager
+from .registry_service import get_service
 
 logger = logging.getLogger(__name__)
-
-
-class BulkPostResult(BaseModel):
-    """複数アカウントへの投稿結果をまとめるモデル。
-
-    Attributes:
-        results (list[PostResult]): 各アカウントへの投稿結果のリスト。
-    """
-
-    results: list[PostResult]
-
-    @property
-    def success_count(self) -> int:
-        """成功した投稿の総数を返します。"""
-        return sum(1 for res in self.results if res.success)
-
-    @property
-    def total_count(self) -> int:
-        """試行した投稿の総数を返します。"""
-        return len(self.results)
-
-    @property
-    def error_messages(self) -> list[str]:
-        """失敗した投稿のエラーメッセージ一覧を返します。
-
-        Returns:
-            list[str]: "プロバイダー: エラー内容" 形式のリスト。
-        """
-        return [f"{res.provider}: {res.translated_error}" for res in self.results if not res.success]
-
-    @property
-    def has_errors(self) -> bool:
-        """一つ以上の投稿が失敗したかどうかを返します。"""
-        return any(not res.success for res in self.results)
 
 
 class PostService:
@@ -53,13 +21,15 @@ class PostService:
 
     @staticmethod
     async def process_images(images: list[UploadFile] | None) -> list[ImageData]:
-        """UploadFileのリストをImageDataのリストに変換します。"""
+        """UploadFileのリストをImageDataのリストに変換し、必要に応じて圧縮します。"""
         images_data: list[ImageData] = []
         if images:
             for img in images:
                 if img.filename:
                     content = await img.read()
-                    images_data.append((content, img.content_type or "image/jpeg"))
+                    # 必要に応じて圧縮（1MB制限などを考慮）
+                    compressed_content = compress_image(content)
+                    images_data.append((compressed_content, img.content_type or "image/jpeg"))
         return images_data
 
     @staticmethod

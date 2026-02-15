@@ -1,4 +1,4 @@
-from app.services.bluesky import BlueskyService
+from app.services.bluesky_service import BlueskyService
 
 
 def test_bluesky_service_text_length_calculation():

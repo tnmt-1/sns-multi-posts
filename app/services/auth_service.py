@@ -1,17 +1,61 @@
 import logging
 import uuid
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from atproto import Client
-from fastapi import HTTPException
+from authlib.integrations.starlette_client import OAuth
+from fastapi import HTTPException, Request
+from starlette.responses import Response
 
-from app.services.base import AccountManager, BlueskyAccount, MisskeyAccount, TwitterAccount, TwitterToken
+from app.config import settings
+from app.schemas.account import BlueskyAccount, MisskeyAccount, TwitterAccount, TwitterToken
+from app.services.account_service import AccountManager
 
 logger = logging.getLogger(__name__)
 
+oauth = OAuth()
+
+# Twitter (X) の設定
+oauth.register(
+    name="twitter",
+    client_id=settings.twitter_client_id,
+    client_secret=settings.twitter_client_secret,
+    request_token_url="https://api.twitter.com/oauth/request_token",
+    request_token_params=None,
+    access_token_url="https://api.twitter.com/oauth/access_token",
+    access_token_params=None,
+    authorize_url="https://api.twitter.com/oauth/authenticate",
+    authorize_params=None,
+    api_base_url="https://api.twitter.com/1.1/",
+    client_kwargs=None,
+)
+
 
 class AuthService:
+    @staticmethod
+    async def get_login_redirect(request: Request, provider: str, redirect_uri: str) -> Response | None:
+        """指定されたプロバイダーのログインリダイレクトレスポンスを返します。
+
+        Twitterの場合は OAuth のリダイレクトレスポンスを返します。
+        Bluesky/Misskey の場合は None を返し、ルーター側でログイン画面を表示させます。
+        """
+        if provider == "twitter":
+            return cast(Response, await oauth.twitter.authorize_redirect(request, redirect_uri))
+        return None
+
+    @staticmethod
+    async def handle_twitter_callback(request: Request, manager: AccountManager) -> None:
+        """Twitter の認証コールバックを処理し、アカウント情報を保存します。"""
+        token = await oauth.twitter.authorize_access_token(request)
+        resp = await oauth.twitter.get("account/verify_credentials.json", token=token)
+        if resp.status_code != 200:
+            logger.error(f"Twitter verify_credentials failed: {resp.status_code} - {resp.text}")
+            raise HTTPException(status_code=400, detail="Twitter authentication failed")
+
+        user_data = resp.json()
+        AuthService.save_twitter_account(manager, user_data, token)
+
     @staticmethod
     async def login_bluesky(manager: AccountManager, handle: str, password: str) -> None:
         """Blueskyにログインし、アカウント情報を保存します。"""

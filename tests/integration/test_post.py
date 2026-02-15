@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, PropertyMock, patch
 
 import pytest
 
-from app.services.base import PostResult
+from app.schemas.post import PostResult
 
 
 @pytest.fixture
@@ -35,8 +35,8 @@ def test_create_post_should_success_when_valid_input(client, mock_accounts):
         mock_session.return_value = {"accounts": mock_accounts}
 
         with (
-            patch("app.services.twitter.TwitterService.post", new_callable=AsyncMock) as mock_tw_post,
-            patch("app.services.misskey.MisskeyService.post", new_callable=AsyncMock) as mock_mk_post,
+            patch("app.services.twitter_service.TwitterService.post", new_callable=AsyncMock) as mock_tw_post,
+            patch("app.services.misskey_service.MisskeyService.post", new_callable=AsyncMock) as mock_mk_post,
         ):
             mock_tw_post.return_value = PostResult(success=True, provider="twitter", post_id="123")
             mock_mk_post.return_value = PostResult(success=True, provider="misskey", post_id="456")
@@ -129,8 +129,8 @@ def test_create_post_partial_failure(client, mock_accounts):
         mock_session.return_value = {"accounts": mock_accounts}
 
         with (
-            patch("app.services.twitter.TwitterService.post", new_callable=AsyncMock) as mock_tw_post,
-            patch("app.services.misskey.MisskeyService.post", new_callable=AsyncMock) as mock_mk_post,
+            patch("app.services.twitter_service.TwitterService.post", new_callable=AsyncMock) as mock_tw_post,
+            patch("app.services.misskey_service.MisskeyService.post", new_callable=AsyncMock) as mock_mk_post,
         ):
             # Twitterは成功、Misskeyは失敗
             mock_tw_post.return_value = PostResult(success=True, provider="twitter", post_id="123")

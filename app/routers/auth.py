@@ -1,37 +1,17 @@
 import logging
-from typing import cast
 
-from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.templating import Jinja2Templates
 from starlette.responses import RedirectResponse, Response
 
-from app.config import settings
+from app.services.account_service import AccountManager, get_account_manager
 from app.services.auth_service import AuthService
-from app.services.base import AccountManager, get_account_manager
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 templates = Jinja2Templates(directory="app/templates")
-
-oauth = OAuth()
-
-# Twitter (X) の設定
-oauth.register(
-    name="twitter",
-    client_id=settings.twitter_client_id,
-    client_secret=settings.twitter_client_secret,
-    request_token_url="https://api.twitter.com/oauth/request_token",
-    request_token_params=None,
-    access_token_url="https://api.twitter.com/oauth/access_token",
-    access_token_params=None,
-    authorize_url="https://api.twitter.com/oauth/authenticate",
-    authorize_params=None,
-    api_base_url="https://api.twitter.com/1.1/",
-    client_kwargs=None,
-)
 
 
 @router.get("/login/{provider}")
@@ -45,12 +25,15 @@ async def login(request: Request, provider: str) -> Response:
     Returns:
         Response: リダイレクト、またはログイン画面のレスポンス。
     """
-    redirect_uri = request.url_for("auth_callback", provider=provider)
-    if provider == "twitter":
-        # authorize_redirect は実際には Starlette Response を返すが、
-        # ライブラリ側の型が Any になっているため Response として明示する
-        return cast(Response, await oauth.twitter.authorize_redirect(request, redirect_uri))
-    elif provider == "bluesky":
+    redirect_uri = str(request.url_for("auth_callback", provider=provider))
+
+    # プロバイダー固有のリダイレクト処理がある場合はそれを実行
+    redirect_resp = await AuthService.get_login_redirect(request, provider, redirect_uri)
+    if redirect_resp:
+        return redirect_resp
+
+    # ログイン画面が必要なプロバイダーの処理
+    if provider == "bluesky":
         return templates.TemplateResponse("auth/bluesky_login.html", {"request": request})
     elif provider == "misskey":
         return templates.TemplateResponse("auth/misskey_login.html", {"request": request})
@@ -117,19 +100,17 @@ async def auth_callback(
     Returns:
         RedirectResponse: ホームへのリダイレクト。
     """
-    if provider == "twitter":
-        token = await oauth.twitter.authorize_access_token(request)
+    try:
+        if provider == "twitter":
+            await AuthService.handle_twitter_callback(request, manager)
+        elif provider == "misskey":
+            await AuthService.callback_misskey(manager, request.session)
 
-        # v1.1 verify_credentials を使用してユーザー情報を取得
-        resp = await oauth.twitter.get("account/verify_credentials.json", token=token)
-        if resp.status_code != 200:
-            logger.error(f"Twitter verify_credentials failed: {resp.status_code} - {resp.text}")
-            raise HTTPException(status_code=400, detail="Twitter authentication failed")
-
-        AuthService.save_twitter_account(manager, resp.json(), token)
-
-    elif provider == "misskey":
-        await AuthService.callback_misskey(manager, request.session)
+    except Exception as e:
+        logger.error(f"Callback failed for {provider}: {e}")
+        # エラー発生時もひとまずトップへ。本来はエラー表示すべきだが
+        # 現状の挙動を維持（あるいは若干改善）
+        return RedirectResponse(url="/", status_code=303)
 
     return RedirectResponse(url="/", status_code=303)
 

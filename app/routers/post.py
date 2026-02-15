@@ -6,7 +6,7 @@ from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from app.services import PostService
-from app.services.base import AccountManager, get_account_manager
+from app.services.account_service import AccountManager, get_account_manager
 
 router = APIRouter(prefix="/post", tags=["post"])
 templates = Jinja2Templates(directory="app/templates")

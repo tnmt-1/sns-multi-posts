@@ -1,4 +1,4 @@
-from app.services.misskey import MisskeyService
+from app.services.misskey_service import MisskeyService
 
 
 def test_misskey_service_text_length_calculation():

@@ -50,8 +50,8 @@ def test_should_return_404_for_unsupported_provider(client: TestClient):
 def test_twitter_callback_success(client: TestClient):
     """Twitterの認証コールバックが成功し、アカウントが保存されることを検証"""
     with (
-        patch("app.routers.auth.oauth.twitter.authorize_access_token", new_callable=AsyncMock) as mock_token,
-        patch("app.routers.auth.oauth.twitter.get", new_callable=AsyncMock) as mock_get,
+        patch("app.services.auth_service.oauth.twitter.authorize_access_token", new_callable=AsyncMock) as mock_token,
+        patch("app.services.auth_service.oauth.twitter.get", new_callable=AsyncMock) as mock_get,
     ):
         mock_token.return_value = {"oauth_token": "token", "oauth_token_secret": "secret"}
         mock_get.return_value = MagicMock(
@@ -67,7 +67,7 @@ def test_twitter_callback_success(client: TestClient):
 
 
 def test_misskey_callback_failure_no_pending(client: TestClient):
-    """保留中のセッションがない場合にMisskeyコールバックが400を返すことを検証"""
-    response = client.get("/auth/callback/misskey")
-    assert response.status_code == 400
-    assert "No pending Misskey login" in response.json()["detail"]
+    """保留中のセッションがない場合にホームにリダイレクトされることを検証（簡略化されたエラーハンドリング）"""
+    response = client.get("/auth/callback/misskey", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"

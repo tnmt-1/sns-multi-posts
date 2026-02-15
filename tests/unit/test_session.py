@@ -1,6 +1,6 @@
 from typing import Any
 
-from app.services.base import migrate_accounts_session
+from app.services.account_service import migrate_accounts_session
 
 
 def test_migrate_accounts_session_empty():

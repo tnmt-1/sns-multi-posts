@@ -4,18 +4,18 @@
 このモジュールで一括管理します。
 """
 
-from .base import SNSProvider
-from .bluesky import BlueskyService
-from .misskey import MisskeyService
-from .twitter import TwitterService
+from .base_service import BaseSNSProvider
+from .bluesky_service import BlueskyService
+from .misskey_service import MisskeyService
+from .twitter_service import TwitterService
 
-_services: dict[str, SNSProvider] = {
+_services: dict[str, BaseSNSProvider] = {
     "twitter": TwitterService(),
     "bluesky": BlueskyService(),
     "misskey": MisskeyService(),
 }
 
 
-def get_service(provider: str) -> SNSProvider | None:
+def get_service(provider: str) -> BaseSNSProvider | None:
     """プロバイダー名に対応するサービスインスタンスを返します。"""
     return _services.get(provider)
