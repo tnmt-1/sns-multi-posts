@@ -43,6 +43,26 @@ class TwitterAccount(AccountBase):
 # セッションに保存されるアカウント情報の構造
 type AccountsSession = dict[str, list[dict[str, Any]]]
 
+
+def migrate_accounts_session(accounts: dict[str, Any]) -> dict[str, Any]:
+    """
+    セッションに保存されている旧形式のアカウントデータを新形式に移行します。
+    """
+    if not accounts:
+        return accounts
+
+    # Misskey: ID を id@instance 形式に移行
+    if "misskey" in accounts and isinstance(accounts["misskey"], list):
+        for acc in accounts["misskey"]:
+            current_id = str(acc.get("id", ""))
+            instance = acc.get("instance")
+            # すでに @ が含まれている場合は移行済みとみなす
+            if instance and "@" not in current_id:
+                acc["id"] = f"{current_id}@{instance}"
+
+    return accounts
+
+
 type ImageData = tuple[bytes, str]
 
 

@@ -10,6 +10,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
 from app.routers import auth, post
+from app.services.base import migrate_accounts_session
 
 # ロガーの設定
 logging.basicConfig(level=logging.INFO)
@@ -40,6 +41,11 @@ app.include_router(post.router)
 @app.get("/")
 async def read_root(request: Request) -> Response:
     accounts: dict[str, Any] = request.session.get("accounts", {})
+
+    # 旧形式のセッションデータを移行
+    accounts = migrate_accounts_session(accounts)
+    if accounts:
+        request.session["accounts"] = accounts
 
     # セッションからフラッシュメッセージを取得
     flash_message = request.session.pop("flash_message", None)

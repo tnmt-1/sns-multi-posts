@@ -10,7 +10,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.responses import RedirectResponse, Response
 
 from app.config import settings
-from app.services.base import BlueskyAccount, MisskeyAccount, TwitterAccount
+from app.services.base import BlueskyAccount, MisskeyAccount, TwitterAccount, migrate_accounts_session
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
@@ -71,8 +71,11 @@ async def login_bluesky(request: Request, handle: str = Form(...), password: str
             password=password,
         )
 
-        # 重複を避ける（IDで判定）
-        if not any(acc["id"] == account_model.id for acc in accounts["bluesky"]):
+        # 既存のアカウントがあれば更新、なければ追加
+        existing_index = next((i for i, acc in enumerate(accounts["bluesky"]) if acc["id"] == account_model.id), None)
+        if existing_index is not None:
+            accounts["bluesky"][existing_index] = account_model.model_dump()
+        else:
             accounts["bluesky"].append(account_model.model_dump())
 
         request.session["accounts"] = accounts
@@ -107,6 +110,7 @@ async def login_misskey(request: Request, instance: str = Form(...)) -> Response
 @router.get("/callback/{provider}")
 async def auth_callback(request: Request, provider: str, session: str | None = None) -> RedirectResponse:
     accounts: dict[str, Any] = request.session.get("accounts", {})
+    accounts = migrate_accounts_session(accounts)
 
     if provider == "twitter":
         token = await oauth.twitter.authorize_access_token(request)
@@ -161,16 +165,21 @@ async def auth_callback(request: Request, provider: str, session: str | None = N
                 accounts["misskey"] = []
 
             # Pydantic モデルを使用してデータを検証
+            # ID はインスタンス内でしか一意でない可能性があるため、インスタンス名を付与して識別子とする
+            account_id = f"{user.get('id')}@{instance}"
             account_model = MisskeyAccount(
-                id=user.get("id"),
+                id=account_id,
                 username=user.get("username"),
                 name=user.get("name"),
                 instance=instance,
                 token=token,
             )
 
-            # 重複を避ける（IDで判定）
-            if not any(acc["id"] == account_model.id for acc in accounts["misskey"]):
+            # 既存のアカウントがあれば更新、なければ追加
+            existing_index = next((i for i, acc in enumerate(accounts["misskey"]) if acc["id"] == account_id), None)
+            if existing_index is not None:
+                accounts["misskey"][existing_index] = account_model.model_dump()
+            else:
                 accounts["misskey"].append(account_model.model_dump())
 
             request.session["accounts"] = accounts
@@ -182,6 +191,7 @@ async def auth_callback(request: Request, provider: str, session: str | None = N
 @router.get("/disconnect/{provider}/{account_id}")
 async def disconnect(request: Request, provider: str, account_id: str) -> RedirectResponse:
     accounts = request.session.get("accounts", {})
+    accounts = migrate_accounts_session(accounts)
     if provider in accounts:
         # 一致するIDのアカウントを除外
         accounts[provider] = [acc for acc in accounts.get(provider, []) if str(acc.get("id")) != account_id]

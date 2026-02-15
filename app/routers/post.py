@@ -8,7 +8,7 @@ from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from app.services import get_service
-from app.services.base import ImageData, SNSProvider
+from app.services.base import ImageData, SNSProvider, migrate_accounts_session
 
 router = APIRouter(prefix="/post", tags=["post"])
 templates = Jinja2Templates(directory="app/templates")
@@ -27,6 +27,7 @@ async def create_post(
 ) -> Response:
     # selected_accounts は "provider:id" 形式の文字列リストとして渡されます
     accounts_session: dict[str, Any] = request.session.get("accounts", {})
+    accounts_session = migrate_accounts_session(accounts_session)
 
     # 画像の処理
     images_data: list[ImageData] = []  # (コンテンツ, コンテンツタイプ) のリスト

@@ -166,7 +166,7 @@
                                                 endif %}
                                                 {% if provider == 'misskey' %}<i
                                                     class="fas fa-rocket text-green-500 mr-1"></i>{% endif %}
-                                                {{ acc.username }}
+                                                {{ acc.username }}{% if provider == 'misskey' %}<span class="text-[10px] opacity-70">@{{ acc.instance }}</span>{% endif %}
                                             </span>
                                         </label>
                                         {% endfor %}
@@ -272,7 +272,7 @@
                                     {% endif %}
                                     <div class="text-sm">
                                         <div class="font-semibold">{{ acc.name }}</div>
-                                        <div class="text-xs text-gray-500">@{{ acc.username }}</div>
+                                        <div class="text-xs text-gray-500">@{{ acc.username }}{% if provider == 'misskey' %}@{{ acc.instance }}{% endif %}</div>
                                     </div>
                                 </div>
                                 <a href="/auth/disconnect/{{ provider }}/{{ acc.id }}"
