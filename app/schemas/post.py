@@ -39,6 +39,8 @@ class PostResult(BaseModel):
         if "401" in msg or "unauthorized" in msg_lower:
             return "認証に失敗しました。アカウントを再連携してください。"
         if "403" in msg or "forbidden" in msg_lower:
+            if "duplicate content" in msg_lower:
+                return "同じ内容がすでに投稿されています。"
             return "アクセスが拒否されました。権限を確認してください。"
 
         return msg
