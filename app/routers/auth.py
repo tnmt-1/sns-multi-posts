@@ -1,15 +1,14 @@
 import logging
-import uuid
+from typing import cast
 
-import httpx
-from atproto import Client
 from authlib.integrations.starlette_client import OAuth
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.templating import Jinja2Templates
 from starlette.responses import RedirectResponse, Response
 
 from app.config import settings
-from app.services.base import AccountManager, BlueskyAccount, MisskeyAccount, TwitterAccount
+from app.services.auth_service import AuthService
+from app.services.base import AccountManager, get_account_manager
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
@@ -50,7 +49,7 @@ async def login(request: Request, provider: str) -> Response:
     if provider == "twitter":
         # authorize_redirect は実際には Starlette Response を返すが、
         # ライブラリ側の型が Any になっているため Response として明示する
-        return await oauth.twitter.authorize_redirect(request, redirect_uri)
+        return cast(Response, await oauth.twitter.authorize_redirect(request, redirect_uri))
     elif provider == "bluesky":
         return templates.TemplateResponse("auth/bluesky_login.html", {"request": request})
     elif provider == "misskey":
@@ -60,35 +59,25 @@ async def login(request: Request, provider: str) -> Response:
 
 
 @router.post("/login/bluesky")
-async def login_bluesky(request: Request, handle: str = Form(...), password: str = Form(...)) -> Response:
+async def login_bluesky(
+    request: Request,
+    handle: str = Form(...),
+    password: str = Form(...),
+    manager: AccountManager = Depends(get_account_manager),
+) -> Response:
     """BlueskyのID/パスワード認証を行い、アカウントをセッションに登録します。
 
     Args:
         request (Request): FastAPIリクエスト。
         handle (str): Blueskyのハンドル名。
         password (str): アプリパスワード。
+        manager (AccountManager): アカウント管理マネージャー。
 
     Returns:
         Response: ホームへのリダイレクト、またはエラー時のログイン画面。
     """
     try:
-        client = Client()
-        profile = client.login(handle, password)
-
-        # Pydantic モデルを使用してデータを検証
-        account_model = BlueskyAccount(
-            id=profile.did,
-            username=profile.handle,
-            name=profile.display_name or profile.handle,
-            handle=handle,
-            password=password,
-        )
-
-        # AccountManager を使用してアカウントを保存
-        manager = AccountManager(request.session)
-        manager.upsert("bluesky", account_model)
-        manager.save()
-
+        await AuthService.login_bluesky(manager, handle, password)
         return RedirectResponse(url="/", status_code=303)
     except Exception as e:
         return templates.TemplateResponse("auth/bluesky_login.html", {"request": request, "error": str(e)})
@@ -105,44 +94,29 @@ async def login_misskey(request: Request, instance: str = Form(...)) -> Response
     Returns:
         Response: Misskey認証URLへのリダイレクト。
     """
-    session_id = str(uuid.uuid4())
-    # インスタンスURLをクリーンアップ
-    instance = instance.replace("https://", "").replace("http://", "").strip("/")
-
     callback_url = str(request.url_for("auth_callback", provider="misskey"))
-    # 検証のために session_id をコールバックに追加するか、単純にセッションを使用します。
-    # MiAuthはコールバックURLでカスタムステートを簡単に返さないため、session_id をキーとして使用します。
-
-    # 認証待ち情報を保存
-    request.session["misskey_pending"] = {
-        "session_id": session_id,
-        "instance": instance,
-    }
-
-    # 画像アップロードでドライブにファイルを書き込む必要があるため、
-    # MiAuth で drive の書き込み権限も要求する
-    # Misskey の MiAuth では permission をカンマ区切りで指定できる
-    permissions = "write:notes,write:drive"
-    auth_url = (
-        f"https://{instance}/miauth/{session_id}?name=SNSMultiPost&callback={callback_url}&permission={permissions}"
-    )
+    auth_url = AuthService.prepare_misskey_login(request.session, instance, callback_url)
     return RedirectResponse(url=auth_url, status_code=303)
 
 
 @router.get("/callback/{provider}")
-async def auth_callback(request: Request, provider: str, session: str | None = None) -> RedirectResponse:
+async def auth_callback(
+    request: Request,
+    provider: str,
+    session: str | None = None,
+    manager: AccountManager = Depends(get_account_manager),
+) -> RedirectResponse:
     """各SNSプロバイダーからの認証コールバックを処理します。
 
     Args:
         request (Request): FastAPIリクエスト。
         provider (str): プロバイダー名。
         session (str | None): MisskeyのセッションID（URLクエリパラメータとして渡される場合）。
+        manager (AccountManager): アカウント管理マネージャー。
 
     Returns:
         RedirectResponse: ホームへのリダイレクト。
     """
-    manager = AccountManager(request.session)
-
     if provider == "twitter":
         token = await oauth.twitter.authorize_access_token(request)
 
@@ -152,73 +126,32 @@ async def auth_callback(request: Request, provider: str, session: str | None = N
             logger.error(f"Twitter verify_credentials failed: {resp.status_code} - {resp.text}")
             raise HTTPException(status_code=400, detail="Twitter authentication failed")
 
-        user_data = resp.json()
-
-        # Pydantic モデルを使用してデータを検証
-        account_model = TwitterAccount(
-            id=user_data.get("id_str"),
-            username=user_data.get("screen_name"),
-            name=user_data.get("name"),
-            token=token,
-        )
-
-        manager.upsert("twitter", account_model)
-        manager.save()
+        AuthService.save_twitter_account(manager, resp.json(), token)
 
     elif provider == "misskey":
-        pending = request.session.get("misskey_pending")
-        if not pending:
-            raise HTTPException(status_code=400, detail="No pending Misskey login")
-
-        session_id = pending["session_id"]
-        instance = pending["instance"]
-
-        # 検証
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(f"https://{instance}/api/miauth/{session_id}/check")
-            if resp.status_code != 200:
-                logger.error(f"Misskey check failed: {resp.status_code} - {resp.text}")
-                raise HTTPException(status_code=400, detail="Misskey authentication failed")
-
-            auth_info = resp.json()
-            if not auth_info.get("ok"):
-                raise HTTPException(status_code=401, detail="Misskey authentication rejected")
-
-            user = auth_info["user"]
-            token = auth_info["token"]
-
-            # Pydantic モデルを使用してデータを検証
-            account_model = MisskeyAccount(
-                # ID を id@instance 形式にして重複を避ける
-                id=f"{user['id']}@{instance}",
-                username=user["username"],
-                name=user["name"] or user["username"],
-                instance=instance,
-                token=token,
-            )
-
-            manager.upsert("misskey", account_model)
-            manager.save()
-
-        # 一時的なセッション情報を削除
-        request.session.pop("misskey_pending", None)
+        await AuthService.callback_misskey(manager, request.session)
 
     return RedirectResponse(url="/", status_code=303)
 
 
 @router.get("/disconnect/{provider}/{account_id}")
-async def disconnect(request: Request, provider: str, account_id: str) -> Response:
+async def disconnect(
+    request: Request,
+    provider: str,
+    account_id: str,
+    manager: AccountManager = Depends(get_account_manager),
+) -> Response:
     """指定されたアカウントの連携を解除（セッションから削除）します。
 
     Args:
         request (Request): FastAPIリクエスト。
         provider (str): プロバイダー名。
         account_id (str): 削除するアカウントID。
+        manager (AccountManager): アカウント管理マネージャー。
 
     Returns:
         Response: ホームへのリダイレクト。
     """
-    manager = AccountManager(request.session)
     manager.remove(provider, account_id)
     manager.save()
     return RedirectResponse(url="/", status_code=303)

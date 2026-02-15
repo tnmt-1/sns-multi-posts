@@ -9,12 +9,12 @@ from atproto import Client, client_utils, models
 from PIL import Image
 from pydantic import BaseModel
 
-from app.services.base import BlueskyAccount, ImageData, PostResult
+from app.services.base import BlueskyAccount, ImageData, PostResult, SNSProvider
 
 logger = logging.getLogger(__name__)
 
 
-class BlueskyService:
+class BlueskyService(SNSProvider):
     PROVIDER_NAME = "bluesky"
     CHAR_LIMIT = 300
 

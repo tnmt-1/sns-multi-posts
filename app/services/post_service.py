@@ -2,6 +2,7 @@ import asyncio
 import logging
 from typing import Any
 
+from fastapi import UploadFile
 from pydantic import BaseModel
 
 from .base import AccountManager, ImageData, PostResult
@@ -51,21 +52,37 @@ class PostService:
     """
 
     @staticmethod
+    async def process_images(images: list[UploadFile] | None) -> list[ImageData]:
+        """UploadFileのリストをImageDataのリストに変換します。"""
+        images_data: list[ImageData] = []
+        if images:
+            for img in images:
+                if img.filename:
+                    content = await img.read()
+                    images_data.append((content, img.content_type or "image/jpeg"))
+        return images_data
+
+    @staticmethod
     def validate_limits(
         manager: AccountManager,
         text: str,
         selected_account_ids: list[str],
+        image_count: int = 0,
     ) -> str | None:
-        """各サービスの文字数制限を検証します。
+        """各サービスの制限を検証します（文字数、画像枚数）。
 
         Args:
             manager (AccountManager): アカウント管理マネージャー。
             text (str): 投稿する本文。
             selected_account_ids (list[str]): 選択されたアカウントIDリスト。
+            image_count (int): 添付画像の枚数。
 
         Returns:
             str | None: 制限を超えている場合のエラーメッセージ。すべて正常なら None。
         """
+        if image_count > 4:
+            return "最大4枚まで画像を添付できます"
+
         targets_dict = manager.resolve_targets(selected_account_ids)
 
         for provider, accounts in targets_dict.items():

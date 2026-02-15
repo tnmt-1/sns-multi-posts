@@ -3,18 +3,18 @@ import logging
 import re
 from collections.abc import Mapping
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import tweepy
 
 from app.config import settings
-from app.services.base import ImageData, PostResult, TwitterAccount, TwitterToken
+from app.services.base import ImageData, PostResult, SNSProvider, TwitterAccount, TwitterToken
 
 logger = logging.getLogger(__name__)
 
 
-class TwitterService:
+class TwitterService(SNSProvider):
     PROVIDER_NAME = "twitter"
     CHAR_LIMIT = 280  # 投稿内容によっては140の場合もあるが、一般的には280 (日本語は140)
 
@@ -58,13 +58,13 @@ def _log_rate_limit_info(response: httpx.Response | object, endpoint: str) -> No
     """Twitter API のレスポンスヘッダーからレート制限情報をログに記録します。"""
     try:
         # レスポンスヘッダーからレート制限情報の取得を試みる
-        headers = {}
+        headers: Mapping[str, Any] = {}
         if isinstance(response, httpx.Response):
             headers = response.headers
         elif hasattr(response, "_headers"):
-            headers = response._headers
+            headers = cast(Mapping[str, Any], response._headers)
         elif hasattr(response, "headers"):
-            headers = response.headers
+            headers = cast(Mapping[str, Any], response.headers)
         else:
             logger.debug(f"No headers found in response for {endpoint}")
             return

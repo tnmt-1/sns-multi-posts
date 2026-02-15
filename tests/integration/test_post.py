@@ -59,6 +59,49 @@ def test_create_post_should_success_when_valid_input(client, mock_accounts):
             assert mock_mk_post.called
 
 
+def test_create_post_validation_error_too_many_images(client, mock_accounts):
+    """画像が4枚を超えた場合にバリデーションエラーが発生することを検証"""
+    with patch("starlette.requests.Request.session", new_callable=PropertyMock) as mock_session:
+        mock_session.return_value = {"accounts": mock_accounts}
+
+        # 5つの空の画像を作成
+        files = [("images", (f"img{i}.jpg", b"content", "image/jpeg")) for i in range(5)]
+
+        response = client.post(
+            "/post/",
+            data={
+                "text": "Too many images",
+                "selected_accounts": ["twitter:tw123"],
+                "misskey_visibility": "public",
+            },
+            files=files,
+        )
+
+        assert response.status_code == 200
+        assert "最大4枚まで画像を添付できます" in response.text
+
+
+def test_create_post_validation_error_text_limit(client, mock_accounts):
+    """文字数制限を超えた場合にバリデーションエラーが発生することを検証"""
+    with patch("starlette.requests.Request.session", new_callable=PropertyMock) as mock_session:
+        mock_session.return_value = {"accounts": mock_accounts}
+
+        # Twitterの140文字制限を超える長い文字列
+        long_text = "a" * 150
+
+        response = client.post(
+            "/post/",
+            data={
+                "text": long_text,
+                "selected_accounts": ["twitter:tw123"],
+                "misskey_visibility": "public",
+            },
+        )
+
+        assert response.status_code == 200
+        assert "Twitter の文字数制限を超えています" in response.text
+
+
 def test_create_post_should_fail_when_text_exceeds_twitter_limit(client, mock_accounts):
     """
     入力されたテキストがTwitterの文字数制限を超えている場合、
@@ -78,3 +121,31 @@ def test_create_post_should_fail_when_text_exceeds_twitter_limit(client, mock_ac
         # Assert: エラーメッセージの検証
         assert response.status_code == 200
         assert "Twitter の文字数制限を超えています" in response.text
+
+
+def test_create_post_partial_failure(client, mock_accounts):
+    """一部のSNS投稿が失敗した場合に警告メッセージが表示されることを検証"""
+    with patch("starlette.requests.Request.session", new_callable=PropertyMock) as mock_session:
+        mock_session.return_value = {"accounts": mock_accounts}
+
+        with (
+            patch("app.services.twitter.TwitterService.post", new_callable=AsyncMock) as mock_tw_post,
+            patch("app.services.misskey.MisskeyService.post", new_callable=AsyncMock) as mock_mk_post,
+        ):
+            # Twitterは成功、Misskeyは失敗
+            mock_tw_post.return_value = PostResult(success=True, provider="twitter", post_id="123")
+            mock_mk_post.return_value = PostResult(success=False, provider="misskey", error="Failed to connect")
+
+            response = client.post(
+                "/post/",
+                data={
+                    "text": "Hello partial failure",
+                    "selected_accounts": ["twitter:tw123", "misskey:mk123@misskey.io"],
+                    "misskey_visibility": "public",
+                },
+                follow_redirects=True,
+            )
+
+            assert response.status_code == 200
+            assert "1 個のアカウントに投稿しました" in response.text
+            assert "失敗: misskey: Failed to connect" in response.text

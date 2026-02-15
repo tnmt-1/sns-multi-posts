@@ -1,6 +1,7 @@
 from collections.abc import Mapping, MutableMapping
 from typing import Any, Protocol, TypedDict, runtime_checkable
 
+from fastapi import Request
 from pydantic import BaseModel, ConfigDict
 
 
@@ -231,6 +232,11 @@ class AccountManager:
                 targets.setdefault(provider, []).append(acc)
 
         return targets
+
+
+def get_account_manager(request: Request) -> AccountManager:
+    """FastAPI 依存性注入用の AccountManager インスタンス取得関数。"""
+    return AccountManager(request.session)
 
 
 type ImageData = tuple[bytes, str]

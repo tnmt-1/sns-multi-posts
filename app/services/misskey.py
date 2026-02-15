@@ -4,12 +4,12 @@ from typing import Any
 
 import httpx
 
-from app.services.base import ImageData, MisskeyAccount, PostResult
+from app.services.base import ImageData, MisskeyAccount, PostResult, SNSProvider
 
 logger = logging.getLogger(__name__)
 
 
-class MisskeyService:
+class MisskeyService(SNSProvider):
     PROVIDER_NAME = "misskey"
     CHAR_LIMIT = 3000
 

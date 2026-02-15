@@ -1,7 +1,7 @@
 import logging
 import os
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -9,7 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
 from app.routers import auth, post
-from app.services.base import AccountManager
+from app.services.base import AccountManager, get_account_manager
 
 # ロガーの設定
 logging.basicConfig(level=logging.INFO)
@@ -38,8 +38,10 @@ app.include_router(post.router)
 
 
 @app.get("/")
-async def read_root(request: Request) -> Response:
-    manager = AccountManager(request.session)
+async def read_root(
+    request: Request,
+    manager: AccountManager = Depends(get_account_manager),
+) -> Response:
     manager.save()  # 移行されたデータを永続化
 
     # セッションからフラッシュメッセージを取得

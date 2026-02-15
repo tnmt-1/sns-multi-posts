@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 def test_bluesky_login_updates_existing_account(client):
     """Bluesky で同じアカウントでログインした場合に情報が更新されることを確認"""
     # 1回目：アカウント追加
-    with patch("app.routers.auth.Client") as mock_client:
+    with patch("app.services.auth_service.Client") as mock_client:
         mock_instance = mock_client.return_value
         mock_instance.login.return_value = MagicMock(did="did:123", handle="user1", display_name="User 1")
 
@@ -15,7 +15,7 @@ def test_bluesky_login_updates_existing_account(client):
         assert "User 1" in response.text
 
     # 2回目：同じアカウントで名前を変えてログイン
-    with patch("app.routers.auth.Client") as mock_client:
+    with patch("app.services.auth_service.Client") as mock_client:
         mock_instance = mock_client.return_value
         mock_instance.login.return_value = MagicMock(did="did:123", handle="user1", display_name="User 1 Updated")
 
