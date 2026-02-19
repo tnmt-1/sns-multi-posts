@@ -1,4 +1,5 @@
 import logging
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -9,6 +10,37 @@ from app.schemas.post import ImageData, PostResult
 from app.services.base_service import BaseSNSProvider
 
 logger = logging.getLogger(__name__)
+
+
+class BlueskyPostContent:
+    """Bluesky の投稿内容（テキスト、リンク、メンション等）をカプセル化するドメインモデル。
+
+    このクラスは Bluesky のリッチテキスト構築ルールをカプセル化し、
+    I/O（API通信）から独立した純粋なロジックを提供します。
+    """
+
+    def __init__(self, text: str):
+        self.text = text
+
+    def to_text_builder(self) -> client_utils.TextBuilder:
+        """テキスト内のURLを抽出し、リンクファセットを含むTextBuilderを構築します。
+
+        Returns:
+            client_utils.TextBuilder: 構築済みのTextBuilder。
+        """
+        tb = client_utils.TextBuilder()
+        last_index = 0
+        # シンプルな URL 正規表現でテキストを分割・処理
+        for match in re.finditer(r"https?://[^\s]+", self.text):
+            # URL の前のテキストを追加
+            tb.text(self.text[last_index : match.start()])
+            # URL 部分をリンクとして追加
+            url = match.group(0)
+            tb.link(url, url)
+            last_index = match.end()
+        # 残りのテキストを追加
+        tb.text(self.text[last_index:])
+        return tb
 
 
 class BlueskyService(BaseSNSProvider):
@@ -95,9 +127,13 @@ class BlueskyService(BaseSNSProvider):
         client = Client()
         client.login(account.handle, account.password)
 
+        # ドメインモデルを使用してリッチテキストを構築
+        content = BlueskyPostContent(text)
+        tb = content.to_text_builder()
+
         if not images:
-            # テキストのみの投稿
-            return client.send_post(text=text, langs=["ja"])
+            # テキストのみの投稿（リンク対応済み tb を使用）
+            return client.send_post(text=tb, langs=["ja"])
 
         # 画像付き投稿
         # Note: atproto SDK の upload_blob は同期実行
@@ -107,9 +143,5 @@ class BlueskyService(BaseSNSProvider):
             blobs.append(models.AppBskyEmbedImages.Image(alt="", image=blob_resp.blob))
 
         embed = models.AppBskyEmbedImages.Main(images=blobs)
-
-        # client_utils.TextBuilder を使うとメンションやリンクが自動で解決される
-        tb = client_utils.TextBuilder()
-        tb.text(text)
 
         return client.send_post(tb, embed=embed, langs=["ja"])

@@ -9,6 +9,8 @@ description: 現在のブランチまたはステージングされたファイ�
 ## ルール:
 
 - gitコマンドを使用して、現在のブランチまたはステージングされたファイルの変更を包括的に分析してください。
+  - `git --no-pager diff --cached` を使用して、ステージングされた変更を取得できます。
+  - `git --no-pager diff` を使用して、現在のブランチの変更を取得できます。
 - **Conventional Commitsスタイル**を使用してください: `type: 短い説明`
   - タイプ: feat, fix, docs, style, refactor, test, chore
 - 必要であれば、本文に長い説明を含めてください。
