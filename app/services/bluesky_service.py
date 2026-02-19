@@ -97,7 +97,7 @@ class BlueskyService(BaseSNSProvider):
 
         if not images:
             # テキストのみの投稿
-            return client.send_post(text=text)
+            return client.send_post(text=text, langs=["ja"])
 
         # 画像付き投稿
         # Note: atproto SDK の upload_blob は同期実行
@@ -112,4 +112,4 @@ class BlueskyService(BaseSNSProvider):
         tb = client_utils.TextBuilder()
         tb.text(text)
 
-        return client.send_post(tb, embed=embed)
+        return client.send_post(tb, embed=embed, langs=["ja"])
