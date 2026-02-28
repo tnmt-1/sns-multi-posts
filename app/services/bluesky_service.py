@@ -8,6 +8,7 @@ from atproto import Client, client_utils, models
 from app.schemas.account import BlueskyAccount
 from app.schemas.post import ImageData, PostResult
 from app.services.base_service import BaseSNSProvider
+from app.utils.ogp_utils import extract_first_url, fetch_image, fetch_ogp
 
 logger = logging.getLogger(__name__)
 
@@ -131,17 +132,37 @@ class BlueskyService(BaseSNSProvider):
         content = BlueskyPostContent(text)
         tb = content.to_text_builder()
 
-        if not images:
-            # テキストのみの投稿（リンク対応済み tb を使用）
-            return client.send_post(text=tb, langs=["ja"])
+        embed = None
+        if images:
+            # 画像付き投稿
+            # Note: atproto SDK の upload_blob は同期実行
+            blobs = []
+            for img_bytes, _mime_type in images:
+                blob_resp = client.upload_blob(img_bytes)
+                blobs.append(models.AppBskyEmbedImages.Image(alt="", image=blob_resp.blob))
+            embed = models.AppBskyEmbedImages.Main(images=blobs)
+        else:
+            # 画像がない場合に URL があれば OGP 取得
+            url = extract_first_url(text)
+            if url:
+                ogp = await fetch_ogp(url)
+                if ogp:
+                    thumb_blob = None
+                    if ogp["image_url"]:
+                        img_data = await fetch_image(ogp["image_url"])
+                        if img_data:
+                            img_bytes, _mime_type = img_data
+                            # Note: upload_blob は同期実行
+                            blob_resp = client.upload_blob(img_bytes)
+                            thumb_blob = blob_resp.blob
 
-        # 画像付き投稿
-        # Note: atproto SDK の upload_blob は同期実行
-        blobs = []
-        for img_bytes, _mime_type in images:
-            blob_resp = client.upload_blob(img_bytes)
-            blobs.append(models.AppBskyEmbedImages.Image(alt="", image=blob_resp.blob))
-
-        embed = models.AppBskyEmbedImages.Main(images=blobs)
+                    embed = models.AppBskyEmbedExternal.Main(
+                        external=models.AppBskyEmbedExternal.External(
+                            title=ogp["title"] or "",
+                            description=ogp["description"] or "",
+                            uri=ogp["url"],
+                            thumb=thumb_blob,
+                        )
+                    )
 
         return client.send_post(tb, embed=embed, langs=["ja"])
